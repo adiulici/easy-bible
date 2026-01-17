@@ -7,6 +7,7 @@
   padding: 60px 0 20px;
   border-top: double 4px #ccc;
   border-bottom: double 4px #ccc;
+  position: relative;
 }
 
 .chapter {
@@ -18,4 +19,21 @@
   line-height: 6rem;
   text-indent: -7rem;
   z-index: -1;
+}
+
+.verseNumber {
+  font-size: 0.65em;
+  vertical-align: super;
+  color: #999;
+  margin-right: 2px;
+}
+
+.lineHighlighter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.05);
+  pointer-events: none;
+  z-index: 1;
 }

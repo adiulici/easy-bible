@@ -1,0 +1,87 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: transparent;
+  z-index: 1000;
+}
+
+.modal {
+  background: rgba(255, 255, 255, 0.95);
+  padding: 2rem 2.5rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  min-width: 400px;
+  max-width: 600px;
+  margin-bottom: 45px;
+  pointer-events: auto;
+}
+
+.content {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: "Domine", serif;
+  font-size: 1.2rem;
+  color: #333;
+}
+
+.prompt {
+  color: #666;
+}
+
+.inputWrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: pre;
+  font-family: "Domine", serif;
+  font-size: 1.2rem;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+}
+
+.input {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: "Domine", serif;
+  font-size: 1.2rem;
+  color: #333;
+  font-weight: 500;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.autocomplete {
+  position: absolute;
+  top: 0;
+  font-family: "Domine", serif;
+  font-size: 1.2rem;
+  color: #999;
+  font-weight: 400;
+  pointer-events: none;
+  white-space: pre;
+  z-index: 0;
+}
+
+.input::placeholder {
+  color: #999;
+}

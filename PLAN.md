@@ -11,7 +11,7 @@ A minimalistic Bible app with vim-inspired keyboard navigation.
 
 ---
 
-## Task 1: Create the Keyboard Command System
+## Task 1: Create the Keyboard Command System - ✅ DONE
 
 **Goal**: Build a robust, extensible system for handling keyboard commands.
 
@@ -38,15 +38,15 @@ src/
 ```
 
 **Acceptance criteria**:
-- [ ] Hook correctly captures keyboard events
-- [ ] Single-key commands trigger immediately
-- [ ] Modal commands set the active mode and collect input
-- [ ] Escape key cancels any active command/modal
-- [ ] Commands are ignored when focus is in an input element
+- [x] Hook correctly captures keyboard events
+- [x] Single-key commands trigger immediately
+- [x] Modal commands set the active mode and collect input
+- [x] Escape key cancels any active command/modal
+- [x] Commands are ignored when focus is in an input element
 
 ---
 
-## Task 2: Create the Command Modal Component
+## Task 2: Create the Command Modal Component - ✅ DONE
 
 **Goal**: Build a reusable modal component for keyboard commands.
 
@@ -77,14 +77,14 @@ src/
 ```
 
 **Acceptance criteria**:
-- [ ] Modal renders centered with semi-transparent background
-- [ ] Input is captured correctly (including backspace, arrows)
-- [ ] Enter submits, Escape cancels
-- [ ] Smooth fade-in animation (optional but nice)
+- [x] Modal renders centered with semi-transparent background
+- [x] Input is captured correctly (including backspace, arrows)
+- [x] Enter submits, Escape cancels
+- [x] Smooth fade-in animation (optional but nice)
 
 ---
 
-## Task 3: Create the Visibility Settings Modal
+## Task 3: Create the Visibility Settings Modal - ✅ DONE
 
 **Goal**: Build the visibility toggle modal with checkbox-style options.
 
@@ -112,14 +112,14 @@ src/
 ```
 
 **Acceptance criteria**:
-- [ ] Modal shows all visibility options with current state
-- [ ] Pressing shortcut key toggles option
-- [ ] Visual feedback when toggling (checkbox updates)
-- [ ] Escape closes the modal
+- [x] Modal shows all visibility options with current state
+- [x] Pressing shortcut key toggles option
+- [x] Visual feedback when toggling (checkbox updates)
+- [x] Escape closes the modal
 
 ---
 
-## Task 4: Create Settings State Management with localStorage Persistence
+## Task 4: Create Settings State Management with localStorage Persistence - ✅ DONE
 
 **Goal**: Manage visibility settings with React Context and persist to localStorage.
 
@@ -144,14 +144,14 @@ src/
 ```
 
 **Acceptance criteria**:
-- [ ] Settings load from localStorage on app start
-- [ ] Settings persist to localStorage on change
-- [ ] Default values used when no localStorage data exists
-- [ ] Context provides current settings and toggle/set functions
+- [x] Settings load from localStorage on app start
+- [x] Settings persist to localStorage on change
+- [x] Default values used when no localStorage data exists
+- [x] Context provides current settings and toggle/set functions
 
 ---
 
-## Task 5: Restructure Verse Rendering for Verse Numbers
+## Task 5: Restructure Verse Rendering for Verse Numbers - ✅ DONE
 
 **Goal**: Update the Bible content rendering to support optional verse numbers.
 
@@ -176,14 +176,14 @@ src/
 ```
 
 **Acceptance criteria**:
-- [ ] Verse numbers appear as superscript before each verse
-- [ ] Verse numbers visibility controlled by settings
-- [ ] Chapter numbers visibility controlled by settings
-- [ ] Text remains readable and well-formatted
+- [x] Verse numbers appear as superscript before each verse
+- [x] Verse numbers visibility controlled by settings
+- [x] Chapter numbers visibility controlled by settings
+- [x] Text remains readable and well-formatted
 
 ---
 
-## Task 6: Implement "Go to Chapter" Command (g)
+## Task 6: Implement "Go to Chapter" Command (g) - ✅ DONE
 
 **Goal**: Allow user to jump to a specific chapter using the `g` key.
 
@@ -203,15 +203,15 @@ src/
 - Scroll uses `smoothScrollToChapter` function (already exists, may need refinement)
 
 **Acceptance criteria**:
-- [ ] `g` key opens modal
-- [ ] Typing updates the input display
-- [ ] Enter scrolls to valid chapter
-- [ ] Invalid chapter number handled gracefully
-- [ ] Escape cancels
+- [x] `g` key opens modal
+- [x] Typing updates the input display
+- [x] Enter scrolls to valid chapter
+- [x] Invalid chapter number handled gracefully
+- [x] Escape cancels
 
 ---
 
-## Task 7: Implement "Go to Book" Command (b)
+## Task 7: Implement "Go to Book" Command (b) - ✅ DONE
 
 **Goal**: Allow user to switch books using fuzzy search autocomplete.
 
@@ -237,16 +237,16 @@ src/
 - Prioritize matches that start with the input
 
 **Acceptance criteria**:
-- [ ] `b` key opens modal
-- [ ] Fuzzy search finds matching books
-- [ ] Best match shown as autocomplete preview
-- [ ] Tab autocompletes
-- [ ] Enter navigates to book
-- [ ] Book content loads and displays correctly
+- [x] `b` key opens modal
+- [x] Fuzzy search finds matching books
+- [x] Best match shown as autocomplete preview
+- [x] Tab autocompletes
+- [x] Enter navigates to book
+- [x] Book content loads and displays correctly
 
 ---
 
-## Task 8: Implement Line Highlighter (Visual Line Tracking)
+## Task 8: Implement Line Highlighter (Visual Line Tracking) - ✅ DONE
 
 **Goal**: Add a horizontal line that highlights the current reading line.
 
@@ -269,14 +269,14 @@ src/
 - `highlighterLineIndex: number` - which line (0-indexed) is highlighted
 
 **Acceptance criteria**:
-- [ ] Highlighter bar appears when enabled
-- [ ] Bar is correctly sized to one line height
-- [ ] Bar is positioned correctly
-- [ ] Subtle, non-distracting visual style
+- [x] Highlighter bar appears when enabled
+- [x] Bar is correctly sized to one line height
+- [x] Bar is positioned correctly
+- [x] Subtle, non-distracting visual style
 
 ---
 
-## Task 9: Implement Line Highlighter Navigation (j/k keys)
+## Task 9: Implement Line Highlighter Navigation (j/k keys) - ✅ DONE
 
 **Goal**: Move the line highlighter up/down with keyboard.
 
@@ -294,15 +294,15 @@ src/
 - Add small padding/margin so highlighter isn't at the very edge
 
 **Acceptance criteria**:
-- [ ] `j` moves highlighter down
-- [ ] `k` moves highlighter up
-- [ ] Auto-scroll when highlighter leaves viewport
-- [ ] Smooth scrolling animation
-- [ ] Respects content boundaries
+- [x] `j` moves highlighter down
+- [x] `k` moves highlighter up
+- [x] Auto-scroll when highlighter leaves viewport
+- [x] Smooth scrolling animation
+- [x] Respects content boundaries
 
 ---
 
-## Task 10: Implement Chapter Navigation (h/l keys)
+## Task 10: Implement Chapter Navigation (h/l keys) - ✅ DONE
 
 **Goal**: Navigate between chapters using `h` (previous) and `l` (next).
 
@@ -318,11 +318,11 @@ src/
 - Smooth scrolling animation
 
 **Acceptance criteria**:
-- [ ] `l` scrolls to next chapter
-- [ ] `h` scrolls to previous chapter
-- [ ] Line highlighter resets to chapter start
-- [ ] Boundary conditions handled (first/last chapter)
-- [ ] Smooth scroll animation
+- [x] `l` scrolls to next chapter
+- [x] `h` scrolls to previous chapter
+- [x] Line highlighter resets to chapter start
+- [x] Boundary conditions handled (first/last chapter)
+- [x] Smooth scroll animation
 
 ---
 

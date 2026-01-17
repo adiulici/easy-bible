@@ -76,8 +76,8 @@ export default function VisibilityModal({
               onClose();
             }}
           >
-            <span className={styles.checkbox}>
-              {settings.showChapterNumbers ? "[x]" : "[ ]"}
+            <span className={`${styles.checkbox} ${settings.showChapterNumbers ? styles.checked : ''}`}>
+              {settings.showChapterNumbers ? "×" : ""}
             </span>
             <span className={styles.label}>Chapter numbers</span>
             <span className={styles.shortcut}>c</span>
@@ -89,8 +89,8 @@ export default function VisibilityModal({
               onClose();
             }}
           >
-            <span className={styles.checkbox}>
-              {settings.showVerseNumbers ? "[x]" : "[ ]"}
+            <span className={`${styles.checkbox} ${settings.showVerseNumbers ? styles.checked : ''}`}>
+              {settings.showVerseNumbers ? "×" : ""}
             </span>
             <span className={styles.label}>Verse numbers</span>
             <span className={styles.shortcut}>v</span>
@@ -102,8 +102,8 @@ export default function VisibilityModal({
               onClose();
             }}
           >
-            <span className={styles.checkbox}>
-              {settings.showLineHighlighter ? "[x]" : "[ ]"}
+            <span className={`${styles.checkbox} ${settings.showLineHighlighter ? styles.checked : ''}`}>
+              {settings.showLineHighlighter ? "×" : ""}
             </span>
             <span className={styles.label}>Line highlighter</span>
             <span className={styles.shortcut}>l</span>

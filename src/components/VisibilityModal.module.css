@@ -45,11 +45,24 @@
 }
 
 .checkbox {
-  font-family: monospace;
-  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 1.5px solid #333;
+  border-radius: 2px;
+  font-size: 1.1rem;
   color: #333;
-  min-width: 2rem;
-  text-align: center;
+  font-weight: 300;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.checkbox.checked {
+  background-color: #333;
+  color: #fff;
 }
 
 .label {

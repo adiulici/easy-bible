@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import styles from "./CommandModal.module.css";
 
 interface CommandModalProps {
@@ -24,8 +24,6 @@ export default function CommandModal({
   onTab,
 }: CommandModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const measureRef = useRef<HTMLSpanElement>(null);
-  const [inputWidth, setInputWidth] = useState(0);
 
   // Focus input when modal opens
   useEffect(() => {
@@ -33,13 +31,6 @@ export default function CommandModal({
       inputRef.current.focus();
     }
   }, [isOpen]);
-
-  // Measure input text width for autocomplete positioning
-  useEffect(() => {
-    if (measureRef.current) {
-      setInputWidth(measureRef.current.offsetWidth);
-    }
-  }, [value]);
 
   // Handle keyboard input on the input element directly
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -57,15 +48,23 @@ export default function CommandModal({
 
   if (!isOpen) return null;
 
+  const showAutocomplete = autocomplete && autocomplete !== value;
+  const autocompleteSuffix = showAutocomplete ? autocomplete.slice(value.length) : "";
+
   return (
     <div className={styles.overlay} onClick={onCancel}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.content}>
           <span className={styles.prompt}>{prompt}</span>
           <div className={styles.inputWrapper}>
-            <span ref={measureRef} className={styles.measure}>
-              {value}
-            </span>
+            {/* Display layer: shows typed text + autocomplete suggestion inline */}
+            <div className={styles.displayLayer} aria-hidden="true">
+              <span className={styles.typedText}>{value}</span>
+              {showAutocomplete && (
+                <span className={styles.autocomplete}>{autocompleteSuffix}</span>
+              )}
+            </div>
+            {/* Input layer: transparent text, handles actual input */}
             <input
               ref={inputRef}
               type="text"
@@ -76,14 +75,6 @@ export default function CommandModal({
               aria-label={prompt}
               autoFocus
             />
-            {autocomplete && autocomplete !== value && (
-              <span 
-                className={styles.autocomplete}
-                style={{ left: `${inputWidth}px` }}
-              >
-                {autocomplete.slice(value.length)}
-              </span>
-            )}
           </div>
         </div>
       </div>

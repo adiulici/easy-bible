@@ -38,48 +38,45 @@
 .inputWrapper {
   flex: 1;
   position: relative;
-  display: flex;
-  align-items: center;
   min-width: 0;
 }
 
-.measure {
-  position: absolute;
-  visibility: hidden;
-  white-space: pre;
+/* Display layer: renders typed text + autocomplete inline together */
+.displayLayer {
+  display: flex;
   font-family: "Domine", serif;
   font-size: 1.2rem;
   font-weight: 500;
-  padding: 0;
-  margin: 0;
+  white-space: pre;
+  pointer-events: none;
 }
 
+.typedText {
+  color: #333;
+}
+
+.autocomplete {
+  color: #999;
+  font-weight: 400;
+}
+
+/* Input layer: positioned on top, text is transparent */
 .input {
-  flex: 1;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   border: none;
   outline: none;
   background: transparent;
   font-family: "Domine", serif;
   font-size: 1.2rem;
-  color: #333;
+  color: transparent;
+  caret-color: #333;
   font-weight: 500;
   padding: 0;
   margin: 0;
-  min-width: 0;
-  position: relative;
-  z-index: 1;
-}
-
-.autocomplete {
-  position: absolute;
-  top: 0;
-  font-family: "Domine", serif;
-  font-size: 1.2rem;
-  color: #999;
-  font-weight: 400;
-  pointer-events: none;
-  white-space: pre;
-  z-index: 0;
 }
 
 .input::placeholder {

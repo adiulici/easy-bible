@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useEffect, ReactNode } from "react
 export interface Settings {
   showChapterNumbers: boolean;
   showVerseNumbers: boolean;
-  showLineHighlighter: boolean;
+  showVerseHighlighter: boolean;
   currentBook: string;
   currentChapter: number;
 }
@@ -12,7 +12,7 @@ export interface Settings {
 const defaultSettings: Settings = {
   showChapterNumbers: true,
   showVerseNumbers: false,
-  showLineHighlighter: false,
+  showVerseHighlighter: false,
   currentBook: "Geneza",
   currentChapter: 1,
 };
@@ -21,7 +21,7 @@ const STORAGE_KEY = "biblia-settings";
 
 interface SettingsContextType {
   settings: Settings;
-  toggleSetting: (key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showLineHighlighter">) => void;
+  toggleSetting: (key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter">) => void;
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
 }
 
@@ -58,7 +58,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   }, [settings, isLoaded]);
 
   const toggleSetting = (
-    key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showLineHighlighter">
+    key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter">
   ) => {
     setSettings((prev) => ({
       ...prev,

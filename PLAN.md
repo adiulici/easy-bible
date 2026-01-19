@@ -94,7 +94,7 @@ src/
 - Displays a list of toggle options:
   - `[x] Chapter numbers` - shortcut `c` (enabled by default)
   - `[ ] Verse numbers` - shortcut `v` (disabled by default)
-  - `[ ] Line highlighter` - shortcut `l` (disabled by default)
+  - `[ ] Verse highlighter` - shortcut `h` (disabled by default)
 - Each option shows:
   - A box with `[x]` if enabled or `[ ]` if disabled
   - The option name
@@ -128,7 +128,7 @@ src/
 - Settings to manage:
   - `showChapterNumbers: boolean` (default: `true`)
   - `showVerseNumbers: boolean` (default: `false`)
-  - `showLineHighlighter: boolean` (default: `false`)
+  - `showVerseHighlighter: boolean` (default: `false`)
   - `currentBook: string` (default: `"Geneza"`)
   - `currentChapter: number` (default: `1`)
 - Provide a `SettingsProvider` component to wrap the app
@@ -246,59 +246,59 @@ src/
 
 ---
 
-## Task 8: Implement Line Highlighter (Visual Line Tracking) - ✅ DONE
+## Task 8: Implement Verse Highlighter - ✅ DONE
 
-**Goal**: Add a horizontal line that highlights the current reading line.
+**Goal**: Add a visual highlight for the current verse being read.
 
 **Details**:
-- When enabled (via visibility settings), show a semi-transparent light grey horizontal bar
-- The bar spans the full width of the content area
-- The bar height should match one line of text (based on line-height)
-- Track which visual line is "current" (start at first line)
-- The bar should be positioned over the current line
-- Subtle styling: `background: rgba(0, 0, 0, 0.05)` or similar light grey
+- When enabled (via visibility settings), highlight the current verse with a subtle background
+- Each verse is wrapped in a clickable span element
+- Track which verse is "current" using chapter and verse number
+- Clicking on a verse switches the highlighter to that verse (even if visibility is off)
+- When changing chapters, move highlighter to first verse of the new chapter
+- Subtle styling: `background: rgba(0, 0, 0, 0.06)` or similar light grey
 
 **Technical approach**:
-- Calculate line height from CSS (currently `line-height: 2.2` on paragraphs with `font-size: 1.1rem`)
-- Track current line as a Y-position offset
-- Use a fixed/absolute positioned div for the highlight bar
-- The bar moves based on the current line index
+- Wrap each verse in a `<span>` with `data-chapter` and `data-verse` attributes
+- Track current verse as `{ chapter: number, verse: number }`
+- Apply highlight class to the currently selected verse
+- Hover effect on verses for better UX
 
 **State to track**:
-- `highlighterY: number` - Y position of the highlighter
-- `highlighterLineIndex: number` - which line (0-indexed) is highlighted
+- `highlightedVerse: { chapter: number, verse: number } | null` - which verse is highlighted
 
 **Acceptance criteria**:
-- [x] Highlighter bar appears when enabled
-- [x] Bar is correctly sized to one line height
-- [x] Bar is positioned correctly
-- [x] Subtle, non-distracting visual style
+- [x] Verse highlight appears when enabled
+- [x] Clicking a verse selects it (even if highlighter is off)
+- [x] Highlight moves to first verse on chapter change
+- [x] Subtle, non-distracting visual style with hover effect
 
 ---
 
-## Task 9: Implement Line Highlighter Navigation (j/k keys) - ✅ DONE
+## Task 9: Implement Verse Highlighter Navigation (j/k keys) - ✅ DONE
 
-**Goal**: Move the line highlighter up/down with keyboard.
+**Goal**: Move the verse highlighter up/down with keyboard.
 
 **Details**:
-- `j` moves highlighter down one line
-- `k` moves highlighter up one line
+- `j` moves highlighter to next verse
+- `k` moves highlighter to previous verse
 - When highlighter moves off-screen, auto-scroll to keep it visible
 - Scrolling should be smooth
-- Highlighter should not move past the first or last line of content
-- These keys only work when line highlighter is enabled
+- Highlighter should not move past the first or last verse of content
+- Navigation is throttled for smooth performance when keys are held down
 
 **Auto-scroll behavior**:
-- If highlighter moves below viewport, scroll down so highlighter is near bottom
-- If highlighter moves above viewport, scroll up so highlighter is near top
-- Add small padding/margin so highlighter isn't at the very edge
+- If highlighted verse moves below viewport, scroll down to keep it visible
+- If highlighted verse moves above viewport, scroll up to keep it visible
+- Add small padding so highlighted verse isn't at the very edge
 
 **Acceptance criteria**:
-- [x] `j` moves highlighter down
-- [x] `k` moves highlighter up
-- [x] Auto-scroll when highlighter leaves viewport
+- [x] `j` moves highlighter to next verse
+- [x] `k` moves highlighter to previous verse
+- [x] Auto-scroll when highlighted verse leaves viewport
 - [x] Smooth scrolling animation
 - [x] Respects content boundaries
+- [x] Smooth performance when j/k keys are held down
 
 ---
 
@@ -309,18 +309,18 @@ src/
 **Details**:
 - `l` goes to next chapter:
   - Scroll to the next chapter heading
-  - Reset line highlighter to first line of that chapter
+  - Reset verse highlighter to first verse of that chapter
   - If at last chapter, do nothing
 - `h` goes to previous chapter:
   - Scroll to the previous chapter heading
-  - Reset line highlighter to first line of that chapter
+  - Reset verse highlighter to first verse of that chapter
   - If at first chapter, do nothing
 - Smooth scrolling animation
 
 **Acceptance criteria**:
 - [x] `l` scrolls to next chapter
 - [x] `h` scrolls to previous chapter
-- [x] Line highlighter resets to chapter start
+- [x] Verse highlighter resets to first verse of chapter
 - [x] Boundary conditions handled (first/last chapter)
 - [x] Smooth scroll animation
 
@@ -336,8 +336,8 @@ src/
   - `g` - Go to chapter
   - `b` - Go to book
   - `v` - Visibility settings
-  - `j` - Move highlighter down
-  - `k` - Move highlighter up
+  - `j` - Move to next verse
+  - `k` - Move to previous verse
   - `h` - Previous chapter
   - `l` - Next chapter
   - `Esc` - Cancel / Close modal
@@ -384,7 +384,7 @@ src/
 - Test all keyboard shortcuts in sequence
 - Test visibility toggles with all combinations
 - Test navigation across multiple books
-- Test line highlighter with long chapters
+- Test verse highlighter with long chapters
 - Test localStorage persistence (reload page, settings preserved)
 - Test edge cases:
   - First/last chapter of a book
@@ -411,8 +411,8 @@ src/
 5. **Task 5**: Verse Rendering with Numbers (uses Task 4)
 6. **Task 6**: Go to Chapter Command (uses Task 1, Task 2)
 7. **Task 7**: Go to Book Command (uses Task 1, Task 2)
-8. **Task 8**: Line Highlighter Display (uses Task 4)
-9. **Task 9**: Line Highlighter Navigation (uses Task 1, Task 8)
+8. **Task 8**: Verse Highlighter Display (uses Task 4)
+9. **Task 9**: Verse Highlighter Navigation (uses Task 1, Task 8)
 10. **Task 10**: Chapter Navigation (uses Task 1)
 11. **Task 11**: Help Modal (optional, uses Task 2)
 12. **Task 12**: UI Polish
@@ -424,5 +424,5 @@ src/
 
 - All keyboard commands should be disabled when a modal is open (except for modal-specific keys)
 - Consider adding visual feedback when commands are activated (subtle flash or indication)
-- The line highlighter visual line calculation may need adjustment based on actual rendered content
+- The verse highlighter uses data attributes to identify verses for highlighting
 - Fuzzy search can be enhanced later with better algorithms if needed

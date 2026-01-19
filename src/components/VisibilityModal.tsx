@@ -5,7 +5,7 @@ import styles from "./VisibilityModal.module.css";
 export interface VisibilitySettings {
   showChapterNumbers: boolean;
   showVerseNumbers: boolean;
-  showLineHighlighter: boolean;
+  showVerseHighlighter: boolean;
 }
 
 interface VisibilityModalProps {
@@ -49,11 +49,11 @@ export default function VisibilityModal({
         event.stopPropagation();
         onClose();
         defer(() => onToggle("showVerseNumbers"));
-      } else if (key === "l") {
+      } else if (key === "h") {
         event.preventDefault();
         event.stopPropagation();
         onClose();
-        defer(() => onToggle("showLineHighlighter"));
+        defer(() => onToggle("showVerseHighlighter"));
       }
     };
 
@@ -98,15 +98,15 @@ export default function VisibilityModal({
           <div
             className={styles.option}
             onClick={() => {
-              onToggle("showLineHighlighter");
+              onToggle("showVerseHighlighter");
               onClose();
             }}
           >
-            <span className={`${styles.checkbox} ${settings.showLineHighlighter ? styles.checked : ''}`}>
-              {settings.showLineHighlighter ? "×" : ""}
+            <span className={`${styles.checkbox} ${settings.showVerseHighlighter ? styles.checked : ''}`}>
+              {settings.showVerseHighlighter ? "×" : ""}
             </span>
-            <span className={styles.label}>Line highlighter</span>
-            <span className={styles.shortcut}>l</span>
+            <span className={styles.label}>Verse highlighter</span>
+            <span className={styles.shortcut}>h</span>
           </div>
         </div>
       </div>

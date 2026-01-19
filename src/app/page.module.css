@@ -28,12 +28,16 @@
   margin-right: 2px;
 }
 
-.lineHighlighter {
-  position: absolute;
-  left: 0;
-  right: 0;
-  width: 100%;
-  background: rgba(0, 0, 0, 0.05);
-  pointer-events: none;
-  z-index: 1;
+.verse {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 0.15s ease;
+}
+
+.verse:hover {
+  background-color: rgba(0, 0, 0, 0.03);
+}
+
+.verseHighlighted {
+  background-color: rgba(0, 0, 0, 0.1);
 }

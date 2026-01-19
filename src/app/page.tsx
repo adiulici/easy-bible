@@ -8,30 +8,57 @@ import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
 
-function smoothScrollToChapter(chapterNumber: string) {
+function smoothScrollToChapter(chapterNumber: string, isProgrammaticScrollRef?: React.MutableRefObject<boolean>) {
+  if (isProgrammaticScrollRef) {
+    isProgrammaticScrollRef.current = true;
+  }
   window.scrollTo({
     top: (document.getElementById(`chapter-${chapterNumber}`)?.offsetTop ?? 0) - 30,
     behavior: 'smooth'
   });
+  // Reset flag after scroll completes (smooth scroll takes ~500ms)
+  if (isProgrammaticScrollRef) {
+    setTimeout(() => {
+      isProgrammaticScrollRef.current = false;
+    }, 600);
+  }
 }
 
 function Chapter({ 
-  chapter, 
-  showVerseNumbers 
+  chapter,
+  chapterNumber,
+  showVerseNumbers,
+  highlightedVerse,
+  showVerseHighlighter,
+  onVerseClick,
 }: { 
   chapter: { number: number; text: string }[];
+  chapterNumber: number;
   showVerseNumbers: boolean;
+  highlightedVerse: { chapter: number; verse: number } | null;
+  showVerseHighlighter: boolean;
+  onVerseClick: (chapter: number, verse: number) => void;
 }) {
   return (
     <>
-      {chapter.map((data) => (
-        <span key={data.number}>
-          {showVerseNumbers && (
-            <sup className={styles.verseNumber}>{data.number}</sup>
-          )}
-          <span dangerouslySetInnerHTML={{ __html: `${data.text} ` }}></span>
-        </span>
-      ))}
+      {chapter.map((data) => {
+        const isHighlighted = highlightedVerse?.chapter === chapterNumber && 
+                              highlightedVerse?.verse === data.number;
+        return (
+          <span 
+            key={data.number}
+            data-chapter={chapterNumber}
+            data-verse={data.number}
+            className={`${styles.verse} ${showVerseHighlighter && isHighlighted ? styles.verseHighlighted : ''}`}
+            onClick={() => onVerseClick(chapterNumber, data.number)}
+          >
+            {showVerseNumbers && (
+              <sup className={styles.verseNumber}>{data.number}</sup>
+            )}
+            <span dangerouslySetInnerHTML={{ __html: `${data.text} ` }}></span>
+          </span>
+        );
+      })}
     </>
   );
 }
@@ -40,10 +67,16 @@ function Book({
   book,
   showChapterNumbers,
   showVerseNumbers,
+  highlightedVerse,
+  showVerseHighlighter,
+  onVerseClick,
 }: {
   book: { [key: string]: { number: number; text: string }[] };
   showChapterNumbers: boolean;
   showVerseNumbers: boolean;
+  highlightedVerse: { chapter: number; verse: number } | null;
+  showVerseHighlighter: boolean;
+  onVerseClick: (chapter: number, verse: number) => void;
 }) {
   return (
     <>
@@ -54,7 +87,14 @@ function Book({
             {showChapterNumbers && (
               <span className={styles.chapter}>{chapterNum}.</span>
             )}
-            <Chapter chapter={chapter} showVerseNumbers={showVerseNumbers} />
+            <Chapter 
+              chapter={chapter} 
+              chapterNumber={chapterNum}
+              showVerseNumbers={showVerseNumbers}
+              highlightedVerse={highlightedVerse}
+              showVerseHighlighter={showVerseHighlighter}
+              onVerseClick={onVerseClick}
+            />
           </p>
         );
       })}
@@ -71,40 +111,90 @@ export default function Home() {
   const { settings, toggleSetting, setSetting } = useSettings();
   const [isVisibilityModalOpen, setIsVisibilityModalOpen] = useState(false);
 
-  // Line highlighter state
-  const [highlighterLineIndex, setHighlighterLineIndex] = useState(0);
+  // Verse highlighter state - tracks current highlighted verse
+  const [highlightedVerse, setHighlightedVerse] = useState<{ chapter: number; verse: number } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [lineHeight, setLineHeight] = useState<number>(0);
-  const [contentTopOffset, setContentTopOffset] = useState<number>(0);
-  const [totalLines, setTotalLines] = useState<number>(0);
+  
+  // Ref to track last navigation time for smooth key repeat handling
+  const lastNavigationTime = useRef<number>(0);
+  const navigationThrottleMs = 50; // Minimum ms between navigation actions
 
   // Keyboard commands hook
   const { activeMode, inputBuffer, registerCommand, cancelCommand, setInputBuffer } = useKeyboardCommands();
 
-  // Handle line highlighter navigation
+  // Build a flat list of all verses for navigation
+  const allVerses = useMemo(() => {
+    const verses: { chapter: number; verse: number }[] = [];
+    Object.entries(content).forEach(([chapterKey, chapter]) => {
+      const chapterNum = parseInt(chapterKey, 10);
+      chapter.forEach((v) => {
+        verses.push({ chapter: chapterNum, verse: v.number });
+      });
+    });
+    return verses;
+  }, [content]);
+
+  // Handle verse highlighter navigation with throttling for smooth key repeat
   const handleMoveHighlighterDown = useCallback(() => {
-    // Only work when line highlighter is enabled and no modal is open
-    if (!settings.showLineHighlighter || activeMode !== null) {
+    // Only work when no modal is open
+    if (activeMode !== null) {
       return;
     }
     
-    setHighlighterLineIndex((prev) => {
-      const newIndex = Math.min(prev + 1, totalLines - 1);
-      return newIndex;
+    // Throttle navigation for smooth key repeat
+    const now = Date.now();
+    if (now - lastNavigationTime.current < navigationThrottleMs) {
+      return;
+    }
+    lastNavigationTime.current = now;
+    
+    setHighlightedVerse((prev) => {
+      if (!prev) {
+        // If no verse highlighted, start at first verse
+        return allVerses[0] || null;
+      }
+      const currentIndex = allVerses.findIndex(
+        (v) => v.chapter === prev.chapter && v.verse === prev.verse
+      );
+      if (currentIndex < allVerses.length - 1) {
+        return allVerses[currentIndex + 1];
+      }
+      return prev;
     });
-  }, [settings.showLineHighlighter, activeMode, totalLines]);
+  }, [activeMode, allVerses]);
 
   const handleMoveHighlighterUp = useCallback(() => {
-    // Only work when line highlighter is enabled and no modal is open
-    if (!settings.showLineHighlighter || activeMode !== null) {
+    // Only work when no modal is open
+    if (activeMode !== null) {
       return;
     }
     
-    setHighlighterLineIndex((prev) => {
-      const newIndex = Math.max(prev - 1, 0);
-      return newIndex;
+    // Throttle navigation for smooth key repeat
+    const now = Date.now();
+    if (now - lastNavigationTime.current < navigationThrottleMs) {
+      return;
+    }
+    lastNavigationTime.current = now;
+    
+    setHighlightedVerse((prev) => {
+      if (!prev) {
+        // If no verse highlighted, start at first verse
+        return allVerses[0] || null;
+      }
+      const currentIndex = allVerses.findIndex(
+        (v) => v.chapter === prev.chapter && v.verse === prev.verse
+      );
+      if (currentIndex > 0) {
+        return allVerses[currentIndex - 1];
+      }
+      return prev;
     });
-  }, [settings.showLineHighlighter, activeMode]);
+  }, [activeMode, allVerses]);
+
+  // Handle verse click - always switch to that verse, even if highlighter is off
+  const handleVerseClick = useCallback((chapter: number, verse: number) => {
+    setHighlightedVerse({ chapter, verse });
+  }, []);
 
   // Handle chapter navigation
   const handleGoToNextChapter = useCallback(() => {
@@ -122,9 +212,12 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", nextChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey);
-      // Reset line highlighter to first line
-      setHighlighterLineIndex(0);
+      smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+      // Reset verse highlighter to first verse of new chapter
+      const firstVerse = content[chapterKey][0];
+      if (firstVerse) {
+        setHighlightedVerse({ chapter: nextChapter, verse: firstVerse.number });
+      }
     }
     // If at last chapter, do nothing
   }, [activeMode, settings.currentChapter, content, setSetting]);
@@ -144,44 +237,50 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", prevChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey);
-      // Reset line highlighter to first line
-      setHighlighterLineIndex(0);
+      smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+      // Reset verse highlighter to first verse of new chapter
+      const firstVerse = content[chapterKey][0];
+      if (firstVerse) {
+        setHighlightedVerse({ chapter: prevChapter, verse: firstVerse.number });
+      }
     }
     // If at first chapter, do nothing
   }, [activeMode, settings.currentChapter, content, setSetting]);
 
-  // Auto-scroll when highlighter moves off-screen
+  // Auto-scroll when highlighted verse moves off-screen
   useEffect(() => {
-    if (!settings.showLineHighlighter || lineHeight === 0 || !contentRef.current) {
+    if (!highlightedVerse || !settings.showVerseHighlighter || !contentRef.current) {
       return;
     }
 
-    const highlighterY = contentTopOffset + (highlighterLineIndex * lineHeight);
-    const contentRect = contentRef.current.getBoundingClientRect();
-    
-    // Calculate highlighter position relative to viewport
-    const highlighterViewportY = contentRect.top + highlighterY;
+    // Find the highlighted verse element
+    const verseElement = contentRef.current.querySelector(
+      `[data-chapter="${highlightedVerse.chapter}"][data-verse="${highlightedVerse.verse}"]`
+    ) as HTMLElement | null;
 
-    // Check if highlighter is below viewport (with 100px padding from bottom)
-    if (highlighterViewportY + lineHeight > window.innerHeight - 100) {
-      // Scroll down so highlighter is near bottom (with padding)
-      const scrollAmount = highlighterViewportY + lineHeight - window.innerHeight + 150;
+    if (!verseElement) return;
+
+    const rect = verseElement.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const padding = 100;
+
+    // Check if verse is below viewport
+    if (rect.bottom > viewportHeight - padding) {
+      const scrollAmount = rect.bottom - viewportHeight + padding + 50;
       window.scrollTo({
         top: window.scrollY + scrollAmount,
         behavior: "smooth",
       });
     }
-    // Check if highlighter is above viewport (with 100px padding from top)
-    else if (highlighterViewportY < 100) {
-      // Scroll up so highlighter is near top (with padding)
-      const scrollAmount = highlighterViewportY - 100;
+    // Check if verse is above viewport
+    else if (rect.top < padding) {
+      const scrollAmount = rect.top - padding;
       window.scrollTo({
         top: window.scrollY + scrollAmount,
         behavior: "smooth",
       });
     }
-  }, [highlighterLineIndex, settings.showLineHighlighter, lineHeight, contentTopOffset]);
+  }, [highlightedVerse, settings.showVerseHighlighter]);
 
   // Register commands
   useEffect(() => {
@@ -229,7 +328,7 @@ export default function Home() {
 
   // Toggle visibility setting
   const handleToggleVisibility = (
-    setting: "showChapterNumbers" | "showVerseNumbers" | "showLineHighlighter"
+    setting: "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter"
   ) => {
     toggleSetting(setting);
   };
@@ -250,7 +349,7 @@ export default function Home() {
         // Update current chapter in settings
         setSetting("currentChapter", chapterNum);
         // Scroll to chapter
-        smoothScrollToChapter(chapterKey);
+        smoothScrollToChapter(chapterKey, isProgrammaticScroll);
         // Close modal and clear input
         cancelCommand();
       } else {
@@ -304,43 +403,28 @@ export default function Home() {
     }
   };
 
-  // Calculate line height from CSS and content offset
+  // Reset highlighter to first verse when book changes
   useEffect(() => {
-    if (contentRef.current) {
-      const firstParagraph = contentRef.current.querySelector("p");
-      if (firstParagraph) {
-        const computedStyle = window.getComputedStyle(firstParagraph);
-        const fontSize = parseFloat(computedStyle.fontSize);
-        const lineHeightValue = parseFloat(computedStyle.lineHeight);
-        // If line-height is a number (not "normal"), use it directly
-        // Otherwise calculate from font-size * 2.2 (from globals.css)
-        const calculatedLineHeight = isNaN(lineHeightValue) 
-          ? fontSize * 2.2 
-          : lineHeightValue;
-        setLineHeight(calculatedLineHeight);
-        
-        // Calculate the offset from content top to first paragraph top
-        const contentRect = contentRef.current.getBoundingClientRect();
-        const paragraphRect = firstParagraph.getBoundingClientRect();
-        const offset = paragraphRect.top - contentRect.top;
-        setContentTopOffset(offset);
+    if (Object.keys(content).length > 0) {
+      const firstChapterKey = Object.keys(content)[0];
+      const firstChapter = content[firstChapterKey];
+      if (firstChapter && firstChapter.length > 0) {
+        setHighlightedVerse({ 
+          chapter: parseInt(firstChapterKey, 10), 
+          verse: firstChapter[0].number 
+        });
       }
     }
-  }, [content]);
+  }, [settings.currentBook, content]);
 
-  // Calculate total number of lines in content
-  useEffect(() => {
-    if (contentRef.current && lineHeight > 0) {
-      const contentHeight = contentRef.current.scrollHeight;
-      const calculatedTotalLines = Math.floor((contentHeight - contentTopOffset) / lineHeight);
-      setTotalLines(Math.max(0, calculatedTotalLines));
-    }
-  }, [content, lineHeight, contentTopOffset]);
-
-  // Reset highlighter when book or chapter changes
-  useEffect(() => {
-    setHighlighterLineIndex(0);
-  }, [settings.currentBook, settings.currentChapter]);
+  // Track if initial scroll has been performed
+  const hasScrolledToInitialChapter = useRef(false);
+  
+  // Track if we're programmatically scrolling to avoid updating currentChapter
+  const isProgrammaticScroll = useRef(false);
+  
+  // Ref to track current chapter for Intersection Observer (avoids stale closures)
+  const currentChapterRef = useRef(settings.currentChapter);
 
   // Load book content when book changes
   useEffect(() => {
@@ -349,31 +433,107 @@ export default function Home() {
         .then((response) => response.json())
         .then((data) => {
           setContent(data);
+          // Reset scroll flag when book changes
+          hasScrolledToInitialChapter.current = false;
         });
     }
   }, [settings.currentBook]);
 
-  // Calculate highlighter Y position (accounting for content offset)
-  const highlighterY = contentTopOffset + (highlighterLineIndex * lineHeight);
+  // Scroll to saved currentChapter on initial page load
+  useEffect(() => {
+    // Only scroll once when content is first loaded
+    if (!hasScrolledToInitialChapter.current && Object.keys(content).length > 0 && settings.currentChapter) {
+      const chapterKey = settings.currentChapter.toString();
+      // Check if chapter exists in content
+      if (content[chapterKey]) {
+        // Use setTimeout to ensure DOM is fully rendered
+        setTimeout(() => {
+          smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+          hasScrolledToInitialChapter.current = true;
+        }, 100);
+      }
+    }
+  }, [content, settings.currentChapter]);
+
+  // Update ref when currentChapter changes
+  useEffect(() => {
+    currentChapterRef.current = settings.currentChapter;
+  }, [settings.currentChapter]);
+
+  // Intersection Observer to track visible chapter
+  useEffect(() => {
+    if (Object.keys(content).length === 0) {
+      return;
+    }
+
+    const observerOptions = {
+      root: null, // viewport
+      rootMargin: '-20% 0px -50% 0px', // Trigger when chapter is in upper portion of viewport
+      threshold: [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], // Multiple thresholds for better detection
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      // Skip updates if we're programmatically scrolling
+      if (isProgrammaticScroll.current) {
+        return;
+      }
+
+      // Find the chapter with the highest intersection ratio
+      let maxRatio = 0;
+      let visibleChapter: number | null = null;
+
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
+          maxRatio = entry.intersectionRatio;
+          const chapterId = entry.target.id;
+          const chapterNum = parseInt(chapterId.replace('chapter-', ''), 10);
+          if (!isNaN(chapterNum)) {
+            visibleChapter = chapterNum;
+          }
+        }
+      });
+
+      // Update currentChapter if we found a visible chapter and it's different
+      if (visibleChapter !== null && visibleChapter !== currentChapterRef.current) {
+        // Use requestAnimationFrame to ensure DOM is ready and batch updates
+        requestAnimationFrame(() => {
+          if (!isProgrammaticScroll.current && visibleChapter !== null) {
+            setSetting("currentChapter", visibleChapter);
+          }
+        });
+      }
+    }, observerOptions);
+
+    // Wait a bit for DOM to be ready, then observe all chapter elements
+    const timeoutId = setTimeout(() => {
+      const chapterElements = Object.keys(content).map((chapterKey) =>
+        document.getElementById(`chapter-${chapterKey}`)
+      ).filter((el): el is HTMLElement => el !== null);
+
+      chapterElements.forEach((element) => {
+        observer.observe(element);
+      });
+    }, 200);
+
+    // Cleanup
+    return () => {
+      clearTimeout(timeoutId);
+      observer.disconnect();
+    };
+  }, [content, setSetting]);
 
   return (
     <>
       <div className={styles.container}>
         <h1>{settings.currentBook}</h1>
         <div className={styles.content} ref={contentRef}>
-          {settings.showLineHighlighter && lineHeight > 0 && (
-            <div
-              className={styles.lineHighlighter}
-              style={{
-                top: `${highlighterY}px`,
-                height: `${lineHeight}px`,
-              }}
-            />
-          )}
           <Book 
             book={content} 
             showChapterNumbers={settings.showChapterNumbers}
             showVerseNumbers={settings.showVerseNumbers}
+            highlightedVerse={highlightedVerse}
+            showVerseHighlighter={settings.showVerseHighlighter}
+            onVerseClick={handleVerseClick}
           />
         </div>
       </div>
@@ -382,7 +542,7 @@ export default function Home() {
         settings={{
           showChapterNumbers: settings.showChapterNumbers,
           showVerseNumbers: settings.showVerseNumbers,
-          showLineHighlighter: settings.showLineHighlighter,
+          showVerseHighlighter: settings.showVerseHighlighter,
         }}
         onToggle={handleToggleVisibility}
         onClose={handleCloseVisibilityModal}

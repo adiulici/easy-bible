@@ -14,6 +14,10 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
   const [inputBuffer, setInputBuffer] = useState<string>("");
   const commandsRef = useRef<Map<string, Command>>(new Map());
   const activeModeRef = useRef<CommandMode>(null);
+  // Tracks a single pending key press while we wait to see if it completes a
+  // two-key chord (e.g. "gg"), so a lone "g" doesn't have to trigger anything.
+  const chordBufferRef = useRef<{ key: string; timestamp: number } | null>(null);
+  const CHORD_TIMEOUT_MS = 600;
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -98,7 +102,31 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
       }
 
       // If not in a mode, check for registered commands
-      const command = commandsRef.current.get(event.key);
+      const key = event.key;
+
+      // Check if this key completes a pending chord (e.g. "g" then "g")
+      if (chordBufferRef.current && Date.now() - chordBufferRef.current.timestamp < CHORD_TIMEOUT_MS) {
+        const chordKey = chordBufferRef.current.key + key;
+        const chordCommand = commandsRef.current.get(chordKey);
+        chordBufferRef.current = null;
+        if (chordCommand) {
+          event.preventDefault();
+          chordCommand.handler?.();
+          return;
+        }
+      }
+
+      // Check if this key starts a registered chord; if so, wait for the next key
+      const startsChord = Array.from(commandsRef.current.keys()).some(
+        (registeredKey) => registeredKey.length === 2 && registeredKey[0] === key
+      );
+      if (startsChord) {
+        chordBufferRef.current = { key, timestamp: Date.now() };
+        event.preventDefault();
+        return;
+      }
+
+      const command = commandsRef.current.get(key);
       if (command) {
         event.preventDefault();
 

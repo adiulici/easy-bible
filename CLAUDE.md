@@ -24,8 +24,8 @@ This is a Romanian Bible reader built with Next.js 15 (App Router) and React 19.
 ### Keyboard Command System
 
 The app uses a custom keyboard command system (`src/hooks/useKeyboardCommands.ts`) with two command types:
-- **Single commands**: Execute immediately (j/k for verse navigation, h/l for chapter navigation)
-- **Modal commands**: Open input modals (g for go-to-chapter, b for go-to-book, v for visibility settings)
+- **Single commands**: Execute immediately (j/k for verse navigation, u/d for page up/down, n/N for previous/next chapter, gg/G for first/last chapter — gg is a two-key chord)
+- **Modal commands**: Open input modals (c for go-to-chapter, b for go-to-book, v for visibility settings)
 
 Commands are registered in `page.tsx` using `registerCommand()`. The hook manages mode state and input buffering.
 

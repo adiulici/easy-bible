@@ -7,38 +7,75 @@ import CommandModal from "@/components/CommandModal";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
+import { createScrollQueue } from "@/utils/scrollQueue";
+
+// Single shared queue for every programmatic window scroll (chapter jumps,
+// verse-into-view nudges, j/k page nudges), so overlapping smooth-scroll
+// calls never fight each other. See scrollQueue.ts for why this exists.
+const scrollQueue = createScrollQueue();
 
 /**
- * Smooth-scrolls to a chapter, and marks the scroll as programmatic for the
- * duration of the scroll so the IntersectionObserver ignores it.
- * @param chapterNumber - Chapter key (e.g. "3") whose element to scroll to.
- * @param scrollGuardRef - Ref tracking programmatic-scroll state and its pending reset timer.
- * @returns void
+ * Returns the absolute scroll offset that puts a chapter's element near the top of the viewport.
+ * @param chapterNumber - Chapter key (e.g. "3") whose element to measure.
+ * @returns Absolute Y offset to scroll to.
  */
-function smoothScrollToChapter(
-  chapterNumber: string,
-  scrollGuardRef?: React.MutableRefObject<{ isScrolling: boolean; resetTimeoutId: ReturnType<typeof setTimeout> | null }>
-) {
-  if (scrollGuardRef) {
-    if (scrollGuardRef.current.resetTimeoutId !== null) {
-      clearTimeout(scrollGuardRef.current.resetTimeoutId);
-    }
-    scrollGuardRef.current.isScrolling = true;
-  }
-  window.scrollTo({
-    top: (document.getElementById(`chapter-${chapterNumber}`)?.offsetTop ?? 0) - 30,
-    behavior: 'smooth'
-  });
-  // Reset flag after scroll completes (smooth scroll takes ~500ms)
-  if (scrollGuardRef) {
-    scrollGuardRef.current.resetTimeoutId = setTimeout(() => {
-      scrollGuardRef.current.isScrolling = false;
-      scrollGuardRef.current.resetTimeoutId = null;
-    }, 600);
-  }
+function getChapterScrollY(chapterNumber: string): number {
+  return (document.getElementById(`chapter-${chapterNumber}`)?.offsetTop ?? 0) - 30;
 }
 
-function Chapter({ 
+/**
+ * Queues a smooth scroll to a chapter. Coalesced with any other pending
+ * chapter jump so rapid-fire navigation ends up as one glide to the final
+ * target instead of a stack of interrupted animations.
+ * @param chapterNumber - Chapter key (e.g. "3") whose element to scroll to.
+ * @returns void
+ */
+function smoothScrollToChapter(chapterNumber: string) {
+  scrollQueue.enqueueAbsolute(() => getChapterScrollY(chapterNumber), {
+    coalesceKey: "chapter-jump",
+    suppressTracking: true,
+  });
+}
+
+// Matches the reading-band IntersectionObserver's rootMargin ('-20% 0px -50%
+// 0px'): the "active" band is the middle slice of the viewport from 20% down
+// to 50% down.
+const READING_BAND_TOP_FRACTION = 0.2;
+const READING_BAND_BOTTOM_FRACTION = 0.5;
+
+/**
+ * Finds whichever chapter occupies the most of the reading band right now,
+ * via direct synchronous measurement instead of the IntersectionObserver.
+ * Used to resync currentChapter once a suppress-tracking scroll (page
+ * down/up) settles, since tracking was off during the scroll itself.
+ * @param chapterKeys - Chapter keys (e.g. ["1", "2", ...]) currently rendered.
+ * @returns The dominant chapter number, or null if none intersect the band.
+ */
+function getDominantChapterInReadingBand(chapterKeys: string[]): number | null {
+  const viewportHeight = window.innerHeight;
+  const bandTop = viewportHeight * READING_BAND_TOP_FRACTION;
+  const bandBottom = viewportHeight * (1 - READING_BAND_BOTTOM_FRACTION);
+
+  let maxIntersectionHeight = 0;
+  let dominant: number | null = null;
+
+  chapterKeys.forEach((chapterKey) => {
+    const element = document.getElementById(`chapter-${chapterKey}`);
+    if (!element) {
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    const intersectionHeight = Math.min(rect.bottom, bandBottom) - Math.max(rect.top, bandTop);
+    if (intersectionHeight > maxIntersectionHeight) {
+      maxIntersectionHeight = intersectionHeight;
+      dominant = parseInt(chapterKey, 10);
+    }
+  });
+
+  return dominant;
+}
+
+function Chapter({
   chapter,
   chapterNumber,
   showVerseNumbers,
@@ -148,20 +185,33 @@ export default function Home() {
     return verses;
   }, [content]);
 
+  // Vimium-style scroll step used by j/k when the verse highlighter is off
+  const SCROLL_STEP_PX = 100;
+
+  // How much viewport height d/u page down/up by, leaving a small overlap
+  // for reading continuity across the jump
+  const PAGE_SCROLL_OVERLAP_PX = 60;
+
   // Handle verse highlighter navigation with throttling for smooth key repeat
   const handleMoveHighlighterDown = useCallback(() => {
     // Only work when no modal is open
     if (activeMode !== null) {
       return;
     }
-    
+
     // Throttle navigation for smooth key repeat
     const now = Date.now();
     if (now - lastNavigationTime.current < navigationThrottleMs) {
       return;
     }
     lastNavigationTime.current = now;
-    
+
+    // With the highlighter off, j/k just nudge the scroll position (Vimium-style)
+    if (!settings.showVerseHighlighter) {
+      scrollQueue.enqueueDelta(SCROLL_STEP_PX, "highlighter-nudge");
+      return;
+    }
+
     setHighlightedVerse((prev) => {
       if (!prev) {
         // If no verse highlighted, start at first verse
@@ -175,21 +225,27 @@ export default function Home() {
       }
       return prev;
     });
-  }, [activeMode, allVerses]);
+  }, [activeMode, allVerses, settings.showVerseHighlighter]);
 
   const handleMoveHighlighterUp = useCallback(() => {
     // Only work when no modal is open
     if (activeMode !== null) {
       return;
     }
-    
+
     // Throttle navigation for smooth key repeat
     const now = Date.now();
     if (now - lastNavigationTime.current < navigationThrottleMs) {
       return;
     }
     lastNavigationTime.current = now;
-    
+
+    // With the highlighter off, j/k just nudge the scroll position (Vimium-style)
+    if (!settings.showVerseHighlighter) {
+      scrollQueue.enqueueDelta(-SCROLL_STEP_PX, "highlighter-nudge");
+      return;
+    }
+
     setHighlightedVerse((prev) => {
       if (!prev) {
         // If no verse highlighted, start at first verse
@@ -203,7 +259,7 @@ export default function Home() {
       }
       return prev;
     });
-  }, [activeMode, allVerses]);
+  }, [activeMode, allVerses, settings.showVerseHighlighter]);
 
   // Handle verse click - always switch to that verse, even if highlighter is off
   const handleVerseClick = useCallback((chapter: number, verse: string) => {
@@ -217,8 +273,14 @@ export default function Home() {
       return;
     }
 
-    const currentChapter = settings.currentChapter;
-    const nextChapter = currentChapter + 1;
+    // Read from the ref (not settings.currentChapter) so this callback's
+    // identity doesn't change every time currentChapter updates - it's also
+    // a dependency of the "Register commands" effect below, and recreating
+    // it on every chapter-tracking update meant that effect re-ran (12
+    // registerCommand calls) on every currentChapter change, which could
+    // stall an in-flight scroll animation's requestAnimationFrame loop for
+    // a frame.
+    const nextChapter = currentChapterRef.current + 1;
     const chapterKey = nextChapter.toString();
 
     // Check if next chapter exists in current book
@@ -226,7 +288,7 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", nextChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey, scrollGuardRef);
+      smoothScrollToChapter(chapterKey);
       // Reset verse highlighter to first verse of new chapter
       const firstVerse = content[chapterKey][0];
       if (firstVerse) {
@@ -234,7 +296,7 @@ export default function Home() {
       }
     }
     // If at last chapter, do nothing
-  }, [activeMode, settings.currentChapter, content, setSetting]);
+  }, [activeMode, content, setSetting]);
 
   const handleGoToPreviousChapter = useCallback(() => {
     // Only work when no modal is open
@@ -242,8 +304,8 @@ export default function Home() {
       return;
     }
 
-    const currentChapter = settings.currentChapter;
-    const prevChapter = currentChapter - 1;
+    // See handleGoToNextChapter for why this reads the ref instead of settings.currentChapter
+    const prevChapter = currentChapterRef.current - 1;
     const chapterKey = prevChapter.toString();
 
     // Check if previous chapter exists in current book
@@ -251,7 +313,7 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", prevChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey, scrollGuardRef);
+      smoothScrollToChapter(chapterKey);
       // Reset verse highlighter to first verse of new chapter
       const firstVerse = content[chapterKey][0];
       if (firstVerse) {
@@ -259,41 +321,161 @@ export default function Home() {
       }
     }
     // If at first chapter, do nothing
-  }, [activeMode, settings.currentChapter, content, setSetting]);
+  }, [activeMode, content, setSetting]);
 
-  // Auto-scroll when highlighted verse moves off-screen
+  // Handle jump to top (first chapter, first verse)
+  const handleGoToTop = useCallback(() => {
+    // Only work when no modal is open
+    if (activeMode !== null) {
+      return;
+    }
+
+    const chapterKeys = Object.keys(content);
+    if (chapterKeys.length === 0) {
+      return;
+    }
+
+    const firstChapterKey = chapterKeys[0];
+    const firstChapterNumber = parseInt(firstChapterKey, 10);
+    setSetting("currentChapter", firstChapterNumber);
+    smoothScrollToChapter(firstChapterKey);
+    const firstVerse = content[firstChapterKey][0];
+    if (firstVerse) {
+      setHighlightedVerse({ chapter: firstChapterNumber, verse: firstVerse.number });
+    }
+  }, [activeMode, content, setSetting]);
+
+  // Handle jump to bottom (last chapter, last verse)
+  const handleGoToBottom = useCallback(() => {
+    // Only work when no modal is open
+    if (activeMode !== null) {
+      return;
+    }
+
+    const chapterKeys = Object.keys(content);
+    if (chapterKeys.length === 0) {
+      return;
+    }
+
+    const lastChapterKey = chapterKeys[chapterKeys.length - 1];
+    const lastChapterNumber = parseInt(lastChapterKey, 10);
+    setSetting("currentChapter", lastChapterNumber);
+    smoothScrollToChapter(lastChapterKey);
+    const lastChapterVerses = content[lastChapterKey];
+    const lastVerse = lastChapterVerses[lastChapterVerses.length - 1];
+    if (lastVerse) {
+      setHighlightedVerse({ chapter: lastChapterNumber, verse: lastVerse.number });
+    }
+  }, [activeMode, content, setSetting]);
+
+  // Counts page-scroll presses that haven't settled yet, so a rapid burst
+  // (or held-down key) only resyncs currentChapter once, after the *last*
+  // one settles - not once per coalesced task. Resyncing after every task
+  // would call setSetting mid-burst, and the resulting re-render would stall
+  // the next queued task's requestAnimationFrame loop right as it's meant
+  // to start, which is just as visible as the original jank.
+  const pendingPageScrollResyncs = useRef(0);
+
+  // Resyncs currentChapter after a suppress-tracking scroll settles, since
+  // tracking was off (and thus not updating it) during the scroll itself.
+  const resyncCurrentChapterFromScroll = useCallback(() => {
+    pendingPageScrollResyncs.current--;
+    if (pendingPageScrollResyncs.current > 0) {
+      return;
+    }
+    const dominant = getDominantChapterInReadingBand(Object.keys(content));
+    if (dominant !== null && dominant !== currentChapterRef.current) {
+      setSetting("currentChapter", dominant);
+    }
+  }, [content, setSetting]);
+
+  // Handle page down/up - a plain viewport-height scroll, not tied to
+  // chapter boundaries. Tracking is suppressed *during* the scroll and
+  // resynced once it settles, rather than left live throughout: a page
+  // covers enough distance to reliably cross a chapter boundary mid-flight,
+  // and letting currentChapter update live there triggered a React
+  // re-render (the whole book's DOM is rendered unvirtualized) that could
+  // stall the scroll's requestAnimationFrame loop for a frame - visible as
+  // jank right at the boundary crossing.
+  const handlePageDown = useCallback(() => {
+    // Only work when no modal is open
+    if (activeMode !== null) {
+      return;
+    }
+
+    pendingPageScrollResyncs.current++;
+    scrollQueue
+      .enqueueDelta(window.innerHeight - PAGE_SCROLL_OVERLAP_PX, "page-scroll", { suppressTracking: true })
+      .then(resyncCurrentChapterFromScroll);
+  }, [activeMode, resyncCurrentChapterFromScroll]);
+
+  const handlePageUp = useCallback(() => {
+    // Only work when no modal is open
+    if (activeMode !== null) {
+      return;
+    }
+
+    pendingPageScrollResyncs.current++;
+    scrollQueue
+      .enqueueDelta(-(window.innerHeight - PAGE_SCROLL_OVERLAP_PX), "page-scroll", { suppressTracking: true })
+      .then(resyncCurrentChapterFromScroll);
+  }, [activeMode, resyncCurrentChapterFromScroll]);
+
+  // Content width bounds and step for the [ / ] adjustment commands
+  const MIN_CONTENT_WIDTH = 600;
+  const CONTENT_WIDTH_MARGIN = 80;
+  const CONTENT_WIDTH_STEP = 50;
+
+  const handleDecreaseWidth = useCallback(() => {
+    setSetting(
+      "contentWidth",
+      Math.max(MIN_CONTENT_WIDTH, settings.contentWidth - CONTENT_WIDTH_STEP)
+    );
+  }, [settings.contentWidth, setSetting]);
+
+  const handleIncreaseWidth = useCallback(() => {
+    const maxContentWidth = window.innerWidth - CONTENT_WIDTH_MARGIN;
+    setSetting(
+      "contentWidth",
+      Math.min(maxContentWidth, settings.contentWidth + CONTENT_WIDTH_STEP)
+    );
+  }, [settings.contentWidth, setSetting]);
+
+  // Auto-scroll when highlighted verse moves off-screen. The rect is
+  // measured lazily inside the queued task (not here) so a burst of j/k
+  // presses reads the verse's settled position instead of a stale one.
   useEffect(() => {
     if (!highlightedVerse || !settings.showVerseHighlighter || !contentRef.current) {
       return;
     }
 
-    // Find the highlighted verse element
-    const verseElement = contentRef.current.querySelector(
-      `[data-chapter="${highlightedVerse.chapter}"][data-verse="${highlightedVerse.verse}"]`
-    ) as HTMLElement | null;
+    const { chapter, verse } = highlightedVerse;
 
-    if (!verseElement) return;
+    scrollQueue.enqueueAbsolute(
+      () => {
+        const verseElement = contentRef.current?.querySelector(
+          `[data-chapter="${chapter}"][data-verse="${verse}"]`
+        ) as HTMLElement | null;
+        if (!verseElement) {
+          return null;
+        }
 
-    const rect = verseElement.getBoundingClientRect();
-    const viewportHeight = window.innerHeight;
-    const padding = 100;
+        const rect = verseElement.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        const padding = 100;
 
-    // Check if verse is below viewport
-    if (rect.bottom > viewportHeight - padding) {
-      const scrollAmount = rect.bottom - viewportHeight + padding + 50;
-      window.scrollTo({
-        top: window.scrollY + scrollAmount,
-        behavior: "smooth",
-      });
-    }
-    // Check if verse is above viewport
-    else if (rect.top < padding) {
-      const scrollAmount = rect.top - padding;
-      window.scrollTo({
-        top: window.scrollY + scrollAmount,
-        behavior: "smooth",
-      });
-    }
+        // Verse is below viewport
+        if (rect.bottom > viewportHeight - padding) {
+          return window.scrollY + (rect.bottom - viewportHeight + padding + 50);
+        }
+        // Verse is above viewport
+        if (rect.top < padding) {
+          return window.scrollY + (rect.top - padding);
+        }
+        return null;
+      },
+      { coalesceKey: "verse-into-view" }
+    );
   }, [highlightedVerse, settings.showVerseHighlighter]);
 
   // Register commands
@@ -304,7 +486,7 @@ export default function Home() {
       mode: "visibility",
     });
     registerCommand({
-      key: "g",
+      key: "c",
       type: "modal",
       mode: "goto-chapter",
     });
@@ -324,16 +506,46 @@ export default function Home() {
       handler: handleMoveHighlighterUp,
     });
     registerCommand({
-      key: "h",
+      key: "u",
+      type: "single",
+      handler: handlePageUp,
+    });
+    registerCommand({
+      key: "d",
+      type: "single",
+      handler: handlePageDown,
+    });
+    registerCommand({
+      key: "gg",
+      type: "single",
+      handler: handleGoToTop,
+    });
+    registerCommand({
+      key: "G",
+      type: "single",
+      handler: handleGoToBottom,
+    });
+    registerCommand({
+      key: "n",
+      type: "single",
+      handler: handleGoToNextChapter,
+    });
+    registerCommand({
+      key: "N",
       type: "single",
       handler: handleGoToPreviousChapter,
     });
     registerCommand({
-      key: "l",
+      key: "[",
       type: "single",
-      handler: handleGoToNextChapter,
+      handler: handleDecreaseWidth,
     });
-  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handleGoToPreviousChapter, handleGoToNextChapter]);
+    registerCommand({
+      key: "]",
+      type: "single",
+      handler: handleIncreaseWidth,
+    });
+  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth]);
 
   // Handle visibility modal open/close based on activeMode
   useEffect(() => {
@@ -363,7 +575,7 @@ export default function Home() {
         // Update current chapter in settings
         setSetting("currentChapter", chapterNum);
         // Scroll to chapter
-        smoothScrollToChapter(chapterKey, scrollGuardRef);
+        smoothScrollToChapter(chapterKey);
         // Close modal and clear input
         cancelCommand();
       } else {
@@ -401,7 +613,7 @@ export default function Home() {
       setSetting("currentBook", matchedBook);
       setSetting("currentChapter", 1);
       // Scroll to top
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      scrollQueue.enqueueAbsolute(() => 0, { coalesceKey: "chapter-jump", suppressTracking: true });
       // Close modal and clear input
       cancelCommand();
     } else {
@@ -442,13 +654,7 @@ export default function Home() {
 
   // Track if initial scroll has been performed
   const hasScrolledToInitialChapter = useRef(false);
-  
-  // Track if we're programmatically scrolling to avoid updating currentChapter
-  const scrollGuardRef = useRef<{ isScrolling: boolean; resetTimeoutId: ReturnType<typeof setTimeout> | null }>({
-    isScrolling: false,
-    resetTimeoutId: null,
-  });
-  
+
   // Ref to track current chapter for Intersection Observer (avoids stale closures)
   const currentChapterRef = useRef(settings.currentChapter);
 
@@ -491,7 +697,7 @@ export default function Home() {
       if (content[chapterKey]) {
         // Use setTimeout to ensure DOM is fully rendered
         setTimeout(() => {
-          smoothScrollToChapter(chapterKey, scrollGuardRef);
+          smoothScrollToChapter(chapterKey);
           hasScrolledToInitialChapter.current = true;
         }, 100);
       }
@@ -517,7 +723,7 @@ export default function Home() {
 
     const observer = new IntersectionObserver((entries) => {
       // Skip updates if we're programmatically scrolling
-      if (scrollGuardRef.current.isScrolling) {
+      if (scrollQueue.isChapterTrackingSuppressed()) {
         return;
       }
 
@@ -543,7 +749,7 @@ export default function Home() {
       if (visibleChapter !== null && visibleChapter !== currentChapterRef.current) {
         // Use requestAnimationFrame to ensure DOM is ready and batch updates
         requestAnimationFrame(() => {
-          if (!scrollGuardRef.current.isScrolling && visibleChapter !== null) {
+          if (!scrollQueue.isChapterTrackingSuppressed() && visibleChapter !== null) {
             setSetting("currentChapter", visibleChapter);
           }
         });
@@ -570,7 +776,10 @@ export default function Home() {
 
   return (
     <>
-      <div className={styles.container}>
+      <div
+        className={styles.container}
+        style={{ maxWidth: `min(${settings.contentWidth}px, calc(100vw - ${CONTENT_WIDTH_MARGIN}px))` }}
+      >
         <h1>{settings.currentBook}</h1>
         <div className={styles.content} ref={contentRef}>
           <Book 

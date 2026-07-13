@@ -7,6 +7,7 @@ export interface Settings {
   showVerseHighlighter: boolean;
   currentBook: string;
   currentChapter: number;
+  contentWidth: number;
 }
 
 const defaultSettings: Settings = {
@@ -15,6 +16,7 @@ const defaultSettings: Settings = {
   showVerseHighlighter: false,
   currentBook: "Geneza",
   currentChapter: 1,
+  contentWidth: 800,
 };
 
 const STORAGE_KEY = "biblia-settings";

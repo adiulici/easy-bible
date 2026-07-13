@@ -12,9 +12,11 @@ npm run lint     # ESLint
 
 ## Keyboard Commands
 
-- `j` / `k` — move the verse highlighter down / up
-- `h` / `l` — go to previous / next chapter
-- `g` — go to chapter (type a chapter number, Enter to jump)
+- `j` / `k` — move the verse highlighter down / up (or nudge-scroll the page when the highlighter is off)
+- `u` / `d` — page up / down
+- `gg` / `G` — go to the first / last chapter
+- `N` / `n` — go to previous / next chapter
+- `c` — go to chapter (type a chapter number, Enter to jump)
 - `b` — go to book (type a name, Tab to autocomplete, Enter to jump)
 - `v` — toggle visibility settings (chapter numbers, verse numbers, verse highlighter)
 - `Escape` — cancel the current modal

@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Biblia
+
+A Romanian Bible reader built with Next.js 15 (App Router) and React 19, with vim-style keyboard navigation for reading scripture.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run dev      # Start dev server with Turbopack (http://localhost:3000)
+npm run build    # Production build
+npm run lint     # ESLint
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Keyboard Commands
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `j` / `k` — move the verse highlighter down / up
+- `h` / `l` — go to previous / next chapter
+- `g` — go to chapter (type a chapter number, Enter to jump)
+- `b` — go to book (type a name, Tab to autocomplete, Enter to jump)
+- `v` — toggle visibility settings (chapter numbers, verse numbers, verse highlighter)
+- `Escape` — cancel the current modal
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Architecture
 
-## Learn More
+- Bible content is stored as JSON in `src/data/bible.json` (structured as `{book: {chapter: [{number, text}]}}`), with the list of book names in `src/data/books.json`.
+- The API route `/api/bible?book=<name>` returns a book's chapters.
+- Settings (visibility toggles, current book/chapter) persist to `localStorage` via `SettingsContext`.
+- Keyboard input is handled by a custom command system in `src/hooks/useKeyboardCommands.ts`, supporting single-key commands (executed immediately) and modal commands (which open an input modal). Commands are registered in `page.tsx` via `registerCommand()`.
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See `CLAUDE.md` for more implementation detail.

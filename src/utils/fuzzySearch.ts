@@ -4,6 +4,12 @@
  * Prioritizes matches that start with the input
  */
 
+/**
+ * Checks whether a book name matches a (possibly non-contiguous) input.
+ * @param input - Text typed by the user.
+ * @param bookName - Candidate book name to test against.
+ * @returns True if bookName starts with input, or contains all of input's characters in order.
+ */
 export function fuzzyMatch(input: string, bookName: string): boolean {
   const normalizedInput = input.toLowerCase().trim();
   const normalizedBook = bookName.toLowerCase();
@@ -28,6 +34,13 @@ export function fuzzyMatch(input: string, bookName: string): boolean {
   return inputIndex === normalizedInput.length;
 }
 
+/**
+ * Finds the best matching book name for the given input, preferring exact
+ * matches, then prefix matches, then fuzzy (non-contiguous) matches.
+ * @param input - Text typed by the user.
+ * @param books - List of candidate book names.
+ * @returns The best matching book name, or null if none match.
+ */
 export function findBestMatch(input: string, books: string[]): string | null {
   const normalizedInput = input.toLowerCase().trim();
 

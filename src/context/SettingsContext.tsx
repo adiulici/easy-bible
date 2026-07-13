@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 
 export interface Settings {
   showChapterNumbers: boolean;
@@ -57,21 +57,33 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [settings, isLoaded]);
 
-  const toggleSetting = (
-    key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter">
-  ) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
+  /**
+   * Flips a boolean setting.
+   * @param key - Key of the boolean setting to toggle.
+   * @returns void
+   */
+  const toggleSetting = useCallback(
+    (key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter">) => {
+      setSettings((prev) => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+    },
+    []
+  );
 
-  const setSetting = <K extends keyof Settings>(key: K, value: Settings[K]) => {
+  /**
+   * Updates a single setting to a new value.
+   * @param key - Key of the setting to update.
+   * @param value - New value for that setting.
+   * @returns void
+   */
+  const setSetting = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSettings((prev) => ({
       ...prev,
       [key]: value,
     }));
-  };
+  }, []);
 
   return (
     <SettingsContext.Provider value={{ settings, toggleSetting, setSetting }}>

@@ -8,18 +8,32 @@ import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
 
-function smoothScrollToChapter(chapterNumber: string, isProgrammaticScrollRef?: React.MutableRefObject<boolean>) {
-  if (isProgrammaticScrollRef) {
-    isProgrammaticScrollRef.current = true;
+/**
+ * Smooth-scrolls to a chapter, and marks the scroll as programmatic for the
+ * duration of the scroll so the IntersectionObserver ignores it.
+ * @param chapterNumber - Chapter key (e.g. "3") whose element to scroll to.
+ * @param scrollGuardRef - Ref tracking programmatic-scroll state and its pending reset timer.
+ * @returns void
+ */
+function smoothScrollToChapter(
+  chapterNumber: string,
+  scrollGuardRef?: React.MutableRefObject<{ isScrolling: boolean; resetTimeoutId: ReturnType<typeof setTimeout> | null }>
+) {
+  if (scrollGuardRef) {
+    if (scrollGuardRef.current.resetTimeoutId !== null) {
+      clearTimeout(scrollGuardRef.current.resetTimeoutId);
+    }
+    scrollGuardRef.current.isScrolling = true;
   }
   window.scrollTo({
     top: (document.getElementById(`chapter-${chapterNumber}`)?.offsetTop ?? 0) - 30,
     behavior: 'smooth'
   });
   // Reset flag after scroll completes (smooth scroll takes ~500ms)
-  if (isProgrammaticScrollRef) {
-    setTimeout(() => {
-      isProgrammaticScrollRef.current = false;
+  if (scrollGuardRef) {
+    scrollGuardRef.current.resetTimeoutId = setTimeout(() => {
+      scrollGuardRef.current.isScrolling = false;
+      scrollGuardRef.current.resetTimeoutId = null;
     }, 600);
   }
 }
@@ -32,12 +46,12 @@ function Chapter({
   showVerseHighlighter,
   onVerseClick,
 }: { 
-  chapter: { number: number; text: string }[];
+  chapter: { number: string; text: string }[];
   chapterNumber: number;
   showVerseNumbers: boolean;
-  highlightedVerse: { chapter: number; verse: number } | null;
+  highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
-  onVerseClick: (chapter: number, verse: number) => void;
+  onVerseClick: (chapter: number, verse: string) => void;
 }) {
   return (
     <>
@@ -71,12 +85,12 @@ function Book({
   showVerseHighlighter,
   onVerseClick,
 }: {
-  book: { [key: string]: { number: number; text: string }[] };
+  book: { [key: string]: { number: string; text: string }[] };
   showChapterNumbers: boolean;
   showVerseNumbers: boolean;
-  highlightedVerse: { chapter: number; verse: number } | null;
+  highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
-  onVerseClick: (chapter: number, verse: number) => void;
+  onVerseClick: (chapter: number, verse: string) => void;
 }) {
   return (
     <>
@@ -104,7 +118,7 @@ function Book({
 
 export default function Home() {
   const [content, setContent] = useState<{
-    [key: string]: { number: number; text: string }[];
+    [key: string]: { number: string; text: string }[];
   }>({});
   
   // Settings from context
@@ -112,7 +126,7 @@ export default function Home() {
   const [isVisibilityModalOpen, setIsVisibilityModalOpen] = useState(false);
 
   // Verse highlighter state - tracks current highlighted verse
-  const [highlightedVerse, setHighlightedVerse] = useState<{ chapter: number; verse: number } | null>(null);
+  const [highlightedVerse, setHighlightedVerse] = useState<{ chapter: number; verse: string } | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   
   // Ref to track last navigation time for smooth key repeat handling
@@ -124,7 +138,7 @@ export default function Home() {
 
   // Build a flat list of all verses for navigation
   const allVerses = useMemo(() => {
-    const verses: { chapter: number; verse: number }[] = [];
+    const verses: { chapter: number; verse: string }[] = [];
     Object.entries(content).forEach(([chapterKey, chapter]) => {
       const chapterNum = parseInt(chapterKey, 10);
       chapter.forEach((v) => {
@@ -192,7 +206,7 @@ export default function Home() {
   }, [activeMode, allVerses]);
 
   // Handle verse click - always switch to that verse, even if highlighter is off
-  const handleVerseClick = useCallback((chapter: number, verse: number) => {
+  const handleVerseClick = useCallback((chapter: number, verse: string) => {
     setHighlightedVerse({ chapter, verse });
   }, []);
 
@@ -212,7 +226,7 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", nextChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+      smoothScrollToChapter(chapterKey, scrollGuardRef);
       // Reset verse highlighter to first verse of new chapter
       const firstVerse = content[chapterKey][0];
       if (firstVerse) {
@@ -237,7 +251,7 @@ export default function Home() {
       // Update current chapter in settings
       setSetting("currentChapter", prevChapter);
       // Scroll to chapter
-      smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+      smoothScrollToChapter(chapterKey, scrollGuardRef);
       // Reset verse highlighter to first verse of new chapter
       const firstVerse = content[chapterKey][0];
       if (firstVerse) {
@@ -349,7 +363,7 @@ export default function Home() {
         // Update current chapter in settings
         setSetting("currentChapter", chapterNum);
         // Scroll to chapter
-        smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+        smoothScrollToChapter(chapterKey, scrollGuardRef);
         // Close modal and clear input
         cancelCommand();
       } else {
@@ -403,17 +417,26 @@ export default function Home() {
     }
   };
 
-  // Reset highlighter to first verse when book changes
+  // Reset highlighter to first verse when the book actually changes (not on
+  // the initial load of a persisted book, which should keep no highlight
+  // until the reader moves it, so the saved chapter position isn't clobbered)
+  const previousBookRef = useRef<string | null>(null);
   useEffect(() => {
-    if (Object.keys(content).length > 0) {
-      const firstChapterKey = Object.keys(content)[0];
-      const firstChapter = content[firstChapterKey];
-      if (firstChapter && firstChapter.length > 0) {
-        setHighlightedVerse({ 
-          chapter: parseInt(firstChapterKey, 10), 
-          verse: firstChapter[0].number 
-        });
-      }
+    if (Object.keys(content).length === 0) {
+      return;
+    }
+    const bookChanged = previousBookRef.current !== null && previousBookRef.current !== settings.currentBook;
+    previousBookRef.current = settings.currentBook;
+    if (!bookChanged) {
+      return;
+    }
+    const firstChapterKey = Object.keys(content)[0];
+    const firstChapter = content[firstChapterKey];
+    if (firstChapter && firstChapter.length > 0) {
+      setHighlightedVerse({
+        chapter: parseInt(firstChapterKey, 10),
+        verse: firstChapter[0].number,
+      });
     }
   }, [settings.currentBook, content]);
 
@@ -421,22 +444,42 @@ export default function Home() {
   const hasScrolledToInitialChapter = useRef(false);
   
   // Track if we're programmatically scrolling to avoid updating currentChapter
-  const isProgrammaticScroll = useRef(false);
+  const scrollGuardRef = useRef<{ isScrolling: boolean; resetTimeoutId: ReturnType<typeof setTimeout> | null }>({
+    isScrolling: false,
+    resetTimeoutId: null,
+  });
   
   // Ref to track current chapter for Intersection Observer (avoids stale closures)
   const currentChapterRef = useRef(settings.currentChapter);
 
   // Load book content when book changes
   useEffect(() => {
-    if (settings.currentBook) {
-      fetch("/api/bible?book=" + settings.currentBook)
-        .then((response) => response.json())
-        .then((data) => {
-          setContent(data);
-          // Reset scroll flag when book changes
-          hasScrolledToInitialChapter.current = false;
-        });
+    if (!settings.currentBook) {
+      return;
     }
+    // Guards against a slower response for a book the reader has since
+    // navigated away from overwriting the content of the current book
+    let isStale = false;
+    fetch("/api/bible?book=" + encodeURIComponent(settings.currentBook))
+      .then((response) => response.json())
+      .then((data) => {
+        if (isStale) return;
+        if (data?.error) {
+          console.error("Failed to load book:", data.error);
+          return;
+        }
+        setContent(data);
+        // Reset scroll flag when book changes
+        hasScrolledToInitialChapter.current = false;
+      })
+      .catch((error) => {
+        if (!isStale) {
+          console.error("Failed to fetch book content:", error);
+        }
+      });
+    return () => {
+      isStale = true;
+    };
   }, [settings.currentBook]);
 
   // Scroll to saved currentChapter on initial page load
@@ -448,7 +491,7 @@ export default function Home() {
       if (content[chapterKey]) {
         // Use setTimeout to ensure DOM is fully rendered
         setTimeout(() => {
-          smoothScrollToChapter(chapterKey, isProgrammaticScroll);
+          smoothScrollToChapter(chapterKey, scrollGuardRef);
           hasScrolledToInitialChapter.current = true;
         }, 100);
       }
@@ -474,17 +517,20 @@ export default function Home() {
 
     const observer = new IntersectionObserver((entries) => {
       // Skip updates if we're programmatically scrolling
-      if (isProgrammaticScroll.current) {
+      if (scrollGuardRef.current.isScrolling) {
         return;
       }
 
-      // Find the chapter with the highest intersection ratio
-      let maxRatio = 0;
+      // Find the chapter occupying the most of the visible reading band, by
+      // absolute intersecting height rather than intersectionRatio (a ratio
+      // relative to each chapter's own height unfairly favors short chapters
+      // over long ones that only partially overlap the band)
+      let maxIntersectionHeight = 0;
       let visibleChapter: number | null = null;
 
       entries.forEach((entry) => {
-        if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
-          maxRatio = entry.intersectionRatio;
+        if (entry.isIntersecting && entry.intersectionRect.height > maxIntersectionHeight) {
+          maxIntersectionHeight = entry.intersectionRect.height;
           const chapterId = entry.target.id;
           const chapterNum = parseInt(chapterId.replace('chapter-', ''), 10);
           if (!isNaN(chapterNum)) {
@@ -497,7 +543,7 @@ export default function Home() {
       if (visibleChapter !== null && visibleChapter !== currentChapterRef.current) {
         // Use requestAnimationFrame to ensure DOM is ready and batch updates
         requestAnimationFrame(() => {
-          if (!isProgrammaticScroll.current && visibleChapter !== null) {
+          if (!scrollGuardRef.current.isScrolling && visibleChapter !== null) {
             setSetting("currentChapter", visibleChapter);
           }
         });

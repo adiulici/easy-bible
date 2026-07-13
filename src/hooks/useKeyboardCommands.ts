@@ -31,7 +31,7 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
     const isInput =
       tagName === "input" ||
       tagName === "textarea" ||
-      activeElement.isContentEditable;
+      (activeElement instanceof HTMLElement && activeElement.isContentEditable);
 
     return isInput;
   }, []);
@@ -41,20 +41,6 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
    */
   const registerCommand = useCallback((command: Command) => {
     commandsRef.current.set(command.key, command);
-  }, []);
-
-  /**
-   * Unregister a command by key
-   */
-  const unregisterCommand = useCallback((key: string) => {
-    commandsRef.current.delete(key);
-  }, []);
-
-  /**
-   * Clear the input buffer
-   */
-  const clearInputBuffer = useCallback(() => {
-    setInputBuffer("");
   }, []);
 
   /**
@@ -140,8 +126,6 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
     activeMode,
     inputBuffer,
     registerCommand,
-    unregisterCommand,
-    clearInputBuffer,
     cancelCommand,
     setInputBuffer,
   };

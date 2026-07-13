@@ -48,8 +48,9 @@ export default function CommandModal({
 
   if (!isOpen) return null;
 
-  const showAutocomplete = autocomplete && autocomplete !== value;
-  const autocompleteSuffix = showAutocomplete ? autocomplete.slice(value.length) : "";
+  const isPrefixMatch = !!autocomplete && autocomplete.toLowerCase().startsWith(value.toLowerCase());
+  const showAutocomplete = isPrefixMatch && autocomplete !== value;
+  const autocompleteSuffix = showAutocomplete ? autocomplete!.slice(value.length) : "";
 
   return (
     <div className={styles.overlay} onClick={onCancel}>

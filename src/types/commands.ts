@@ -31,10 +31,6 @@ export interface KeyboardCommandsAPI {
   inputBuffer: string;
   /** Register a new command */
   registerCommand: (command: Command) => void;
-  /** Unregister a command by key */
-  unregisterCommand: (key: string) => void;
-  /** Clear the input buffer */
-  clearInputBuffer: () => void;
   /** Cancel the current command/mode */
   cancelCommand: () => void;
   /** Set the input buffer (for external updates) */

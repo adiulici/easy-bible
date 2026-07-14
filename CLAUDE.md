@@ -26,8 +26,8 @@ This is a Romanian Bible reader built with Next.js 15 (App Router) and React 19.
 
 The app uses a custom keyboard command system (`src/hooks/useKeyboardCommands.ts`) with two command types:
 
-- **Single commands**: Execute immediately (j/k for verse navigation, u/d for page up/down, n/N for previous/next chapter, gg/G for first/last chapter — gg is a two-key chord)
-- **Modal commands**: Open input modals (c for go-to-chapter, b for go-to-book, v for visibility settings)
+- **Single commands**: Execute immediately (j/k for verse navigation, u/d for page up/down, n/N for previous/next chapter, gg/G for first/last chapter — gg is a two-key chord, m to toggle a bookmark on the highlighted verse)
+- **Modal commands**: Open input modals (c for go-to-chapter, b for go-to-book, v for visibility settings, M for the bookmarks list)
 
 Commands are registered in `page.tsx` using `registerCommand()`. The hook manages mode state and input buffering.
 
@@ -36,7 +36,9 @@ Commands are registered in `page.tsx` using `registerCommand()`. The hook manage
 - `page.tsx` - Main page, orchestrates book/chapter/verse rendering and all keyboard navigation
 - `CommandModal` - Generic modal for text input commands with autocomplete support
 - `VisibilityModal` - Toggle display options (chapter numbers, verse numbers, verse highlighter)
-- `SettingsContext` - Global settings state with localStorage persistence
+- `BookmarksModal` - List/jump/delete verse bookmarks (opened with `M`)
+- `Toast` - Transient, presentational hint message (e.g. bookmark-requires-highlighter)
+- `SettingsContext` - Global settings state with localStorage persistence (includes `bookmarks`)
 
 ### Path Alias
 

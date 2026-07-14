@@ -4,10 +4,13 @@ import styles from "./page.module.css";
 import { useKeyboardCommands } from "@/hooks/useKeyboardCommands";
 import VisibilityModal from "@/components/VisibilityModal";
 import CommandModal from "@/components/CommandModal";
+import BookmarksModal from "@/components/BookmarksModal";
+import Toast from "@/components/Toast";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
 import { createScrollQueue } from "@/utils/scrollQueue";
+import { buildVerseSnippet, decidePendingJump, type Bookmark } from "@/utils/bookmarks";
 
 // Single shared queue for every programmatic window scroll (chapter jumps,
 // verse-into-view nudges, j/k page nudges), so overlapping smooth-scroll
@@ -81,26 +84,29 @@ function Chapter({
   showVerseNumbers,
   highlightedVerse,
   showVerseHighlighter,
+  bookmarkedVerseKeys,
   onVerseClick,
-}: { 
+}: {
   chapter: { number: string; text: string }[];
   chapterNumber: number;
   showVerseNumbers: boolean;
   highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
+  bookmarkedVerseKeys: Set<string>;
   onVerseClick: (chapter: number, verse: string) => void;
 }) {
   return (
     <>
       {chapter.map((data) => {
-        const isHighlighted = highlightedVerse?.chapter === chapterNumber && 
+        const isHighlighted = highlightedVerse?.chapter === chapterNumber &&
                               highlightedVerse?.verse === data.number;
+        const isBookmarked = bookmarkedVerseKeys.has(`${chapterNumber}:${data.number}`);
         return (
-          <span 
+          <span
             key={data.number}
             data-chapter={chapterNumber}
             data-verse={data.number}
-            className={`${styles.verse} ${showVerseHighlighter && isHighlighted ? styles.verseHighlighted : ''}`}
+            className={`${styles.verse} ${showVerseHighlighter && isHighlighted ? styles.verseHighlighted : ''} ${isBookmarked ? styles.verseBookmarked : ''}`}
             onClick={() => onVerseClick(chapterNumber, data.number)}
           >
             {showVerseNumbers && (
@@ -120,6 +126,7 @@ function Book({
   showVerseNumbers,
   highlightedVerse,
   showVerseHighlighter,
+  bookmarkedVerseKeys,
   onVerseClick,
 }: {
   book: { [key: string]: { number: string; text: string }[] };
@@ -127,6 +134,7 @@ function Book({
   showVerseNumbers: boolean;
   highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
+  bookmarkedVerseKeys: Set<string>;
   onVerseClick: (chapter: number, verse: string) => void;
 }) {
   return (
@@ -138,12 +146,13 @@ function Book({
             {showChapterNumbers && (
               <span className={styles.chapter}>{chapterNum}.</span>
             )}
-            <Chapter 
-              chapter={chapter} 
+            <Chapter
+              chapter={chapter}
               chapterNumber={chapterNum}
               showVerseNumbers={showVerseNumbers}
               highlightedVerse={highlightedVerse}
               showVerseHighlighter={showVerseHighlighter}
+              bookmarkedVerseKeys={bookmarkedVerseKeys}
               onVerseClick={onVerseClick}
             />
           </p>
@@ -159,8 +168,23 @@ export default function Home() {
   }>({});
   
   // Settings from context
-  const { settings, toggleSetting, setSetting } = useSettings();
+  const { settings, toggleSetting, setSetting, toggleBookmark, removeBookmark } = useSettings();
   const [isVisibilityModalOpen, setIsVisibilityModalOpen] = useState(false);
+
+  // Transient toast (e.g. the "turn on the highlighter" hint). Local page
+  // state + a small presentational component; no portal/context system.
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Pending cross-book bookmark jump, consumed by a content-keyed effect once
+  // the target book's content has loaded. See the jump effect below.
+  const pendingJumpRef = useRef<{ book: string; chapter: number; verse: string } | null>(null);
+
+  // Which book `content` currently holds. `content` itself carries no book
+  // identity, and `settings.currentBook` flips synchronously (ahead of the
+  // async fetch), so this ref is the only reliable "content IS book X" signal.
+  // Set in the fetch `.then` on success, right where setContent runs.
+  const contentBookRef = useRef<string>("");
 
   // Verse highlighter state - tracks current highlighted verse
   const [highlightedVerse, setHighlightedVerse] = useState<{ chapter: number; verse: string } | null>(null);
@@ -299,6 +323,140 @@ export default function Home() {
   const handleVerseClick = useCallback((chapter: number, verse: string) => {
     setHighlightedVerse({ chapter, verse });
   }, []);
+
+  const TOAST_DURATION_MS = 2500;
+  /**
+   * Shows a transient toast message, auto-dismissed after a short delay. Any
+   * previously scheduled dismissal is cancelled so the newest message gets the
+   * full duration.
+   * @param message - The text to display in the toast.
+   * @returns void
+   */
+  const showToast = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) {
+      clearTimeout(toastTimer.current);
+    }
+    toastTimer.current = setTimeout(() => setToast(null), TOAST_DURATION_MS);
+  }, []);
+
+  // Clear any pending toast timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) {
+        clearTimeout(toastTimer.current);
+      }
+    };
+  }, []);
+
+  // Keys ("chapter:verse") of bookmarks in the current book, for the in-text
+  // marker. O(1) membership test per rendered verse.
+  const bookmarkedVerseKeys = useMemo(() => {
+    return new Set(
+      settings.bookmarks
+        .filter((b) => b.book === settings.currentBook)
+        .map((b) => `${b.chapter}:${b.verse}`)
+    );
+  }, [settings.bookmarks, settings.currentBook]);
+
+  /**
+   * Queues a smooth scroll that centers a verse ~1/3 down the viewport. The
+   * target is measured lazily when the task runs; returns null (queue skips,
+   * no crash) if the verse element is absent (e.g. a stale bookmark).
+   * @param chapter - Chapter number of the verse to center.
+   * @param verse - Verse number key to center.
+   * @returns void
+   */
+  const scrollVerseIntoCenter = useCallback((chapter: number, verse: string) => {
+    scrollQueue.enqueueAbsolute(
+      () => {
+        const verseElement = contentRef.current?.querySelector(
+          `[data-chapter="${chapter}"][data-verse="${verse}"]`
+        ) as HTMLElement | null;
+        if (!verseElement) {
+          return null;
+        }
+        const rect = verseElement.getBoundingClientRect();
+        return window.scrollY + rect.top - window.innerHeight * 0.3;
+      },
+      { coalesceKey: "jump-verse", suppressTracking: true }
+    );
+  }, []);
+
+  /**
+   * Navigates to a bookmark. Same-book jumps set chapter/highlight and scroll
+   * immediately (content is present). Cross-book jumps stash the target in
+   * pendingJumpRef and switch book/chapter; a content-keyed effect completes
+   * the highlight + scroll once the new book has loaded.
+   * @param bookmark - The bookmark to jump to.
+   * @returns void
+   */
+  const handleBookmarkJump = useCallback((bookmark: Bookmark) => {
+    if (bookmark.book === settings.currentBook) {
+      setSetting("currentChapter", bookmark.chapter);
+      setHighlightedVerse({ chapter: bookmark.chapter, verse: bookmark.verse });
+      scrollVerseIntoCenter(bookmark.chapter, bookmark.verse);
+      return;
+    }
+    pendingJumpRef.current = {
+      book: bookmark.book,
+      chapter: bookmark.chapter,
+      verse: bookmark.verse,
+    };
+    setSetting("currentBook", bookmark.book);
+    setSetting("currentChapter", bookmark.chapter);
+  }, [settings.currentBook, setSetting, scrollVerseIntoCenter]);
+
+  // The `m` handler needs several volatile values (highlighted verse, loaded
+  // content, highlighter flag, current book, active mode) but must keep a STABLE
+  // identity - otherwise the command-registration effect below re-runs on every
+  // j/k (which moves highlightedVerse), re-issuing every registerCommand mid
+  // scroll. So we mirror those values into a ref and read them at call time; the
+  // captured snippet still reflects the latest values, just via the ref.
+  // Refreshed on every render so the stable `m` handler always reads the latest
+  // values (a plain ref assignment, not an effect — the ref just holds "latest").
+  const toggleBookmarkInputsRef = useRef({
+    activeMode,
+    highlightedVerse,
+    content,
+    showVerseHighlighter: settings.showVerseHighlighter,
+    currentBook: settings.currentBook,
+  });
+  toggleBookmarkInputsRef.current = {
+    activeMode,
+    highlightedVerse,
+    content,
+    showVerseHighlighter: settings.showVerseHighlighter,
+    currentBook: settings.currentBook,
+  };
+
+  /**
+   * Toggles a bookmark on the currently highlighted verse (the `m` command).
+   * Requires the highlighter to be on and a verse selected; otherwise shows a
+   * hint toast and is a no-op. Captures a plain-text snippet at creation. Reads
+   * volatile inputs from a ref so its identity stays stable (see the ref above).
+   * @returns void
+   */
+  const handleToggleBookmark = useCallback(() => {
+    const { activeMode, highlightedVerse, content, showVerseHighlighter, currentBook } =
+      toggleBookmarkInputsRef.current;
+    if (activeMode !== null) {
+      return;
+    }
+    if (!showVerseHighlighter || !highlightedVerse) {
+      showToast("Turn on the verse highlighter to bookmark");
+      return;
+    }
+    const { chapter, verse } = highlightedVerse;
+    const verseText = content[String(chapter)]?.find((v) => v.number === verse)?.text;
+    toggleBookmark({
+      book: currentBook,
+      chapter,
+      verse,
+      text: buildVerseSnippet(verseText ?? ""),
+      createdAt: Date.now(),
+    });
+  }, [toggleBookmark, showToast]);
 
   // Handle chapter navigation
   const handleGoToNextChapter = useCallback(() => {
@@ -558,7 +716,17 @@ export default function Home() {
       type: "single",
       handler: handleIncreaseWidth,
     });
-  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth]);
+    registerCommand({
+      key: "m",
+      type: "single",
+      handler: handleToggleBookmark,
+    });
+    registerCommand({
+      key: "M",
+      type: "modal",
+      mode: "bookmarks",
+    });
+  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth, handleToggleBookmark]);
 
   // Handle visibility modal open/close based on activeMode
   useEffect(() => {
@@ -655,6 +823,11 @@ export default function Home() {
     if (!bookChanged) {
       return;
     }
+    // A cross-book bookmark jump owns the highlight; don't reset it to verse 1
+    // (the content-keyed jump effect below will set the bookmarked verse).
+    if (pendingJumpRef.current) {
+      return;
+    }
     const firstChapterKey = Object.keys(content)[0];
     const firstChapter = content[firstChapterKey];
     if (firstChapter && firstChapter.length > 0) {
@@ -664,6 +837,49 @@ export default function Home() {
       });
     }
   }, [settings.currentBook, content]);
+
+  // Complete a pending cross-book bookmark jump once the target book's content
+  // has actually loaded. Keyed on `content` so it runs after the fetch effect
+  // swaps in the new book. Gated on contentBookRef (the book `content` really
+  // holds) - NOT settings.currentBook, which flips synchronously ahead of the
+  // async fetch and would let this fire against the OLD book's content. A stale
+  // chapter is dropped gracefully (no crash).
+  useEffect(() => {
+    // Gate on contentBookRef (the book `content` really holds), NOT
+    // settings.currentBook, which flips synchronously ahead of the async fetch
+    // and would let this fire against the OLD book's content. See
+    // decidePendingJump for the pure decision (unit-tested).
+    const decision = decidePendingJump(
+      pendingJumpRef.current,
+      contentBookRef.current,
+      Object.keys(content)
+    );
+    switch (decision.action) {
+      case "none":
+        return;
+      case "abandon":
+        // Content loaded for a book other than the pending target: a newer
+        // navigation superseded this jump. Clear the ref so the previousBookRef
+        // guard below doesn't stay armed forever. Symmetric with the fetch's
+        // isStale guard - contentBookRef only holds the latest loaded book.
+        pendingJumpRef.current = null;
+        return;
+      case "drop-stale":
+        pendingJumpRef.current = null; // target chapter absent -> drop, no crash
+        return;
+      case "complete":
+        // Suppress the initial-chapter-scroll effect for this commit: the fetch
+        // `.then` reset the flag to false, but this jump owns the scroll and
+        // targets a verse, not the chapter top. Setting it true here (this
+        // effect runs before the initial-scroll effect, defined later) stops
+        // that effect from enqueuing a competing chapter-top scroll.
+        hasScrolledToInitialChapter.current = true;
+        setHighlightedVerse({ chapter: decision.chapter, verse: decision.verse });
+        scrollVerseIntoCenter(decision.chapter, decision.verse);
+        pendingJumpRef.current = null;
+        return;
+    }
+  }, [content, scrollVerseIntoCenter]);
 
   // Track if initial scroll has been performed
   const hasScrolledToInitialChapter = useRef(false);
@@ -685,9 +901,19 @@ export default function Home() {
         if (isStale) return;
         if (data?.error) {
           console.error("Failed to load book:", data.error);
+          showToast(`Could not load ${settings.currentBook}`);
+          // Drop any pending jump aimed at this book, and revert the title to
+          // the book still on screen, so a missing book doesn't leave a
+          // title/content mismatch or a leaked ref that arms the jump guard.
+          pendingJumpRef.current = null;
+          if (contentBookRef.current && contentBookRef.current !== settings.currentBook) {
+            setSetting("currentBook", contentBookRef.current);
+          }
           return;
         }
         setContent(data);
+        // Record which book `content` now holds (the jump effect gates on this).
+        contentBookRef.current = settings.currentBook;
         // Reset scroll flag when book changes
         hasScrolledToInitialChapter.current = false;
       })
@@ -699,7 +925,7 @@ export default function Home() {
     return () => {
       isStale = true;
     };
-  }, [settings.currentBook]);
+  }, [settings.currentBook, showToast, setSetting]);
 
   // Scroll to saved currentChapter on initial page load
   useEffect(() => {
@@ -795,12 +1021,13 @@ export default function Home() {
       >
         <h1>{settings.currentBook}</h1>
         <div className={styles.content} ref={contentRef}>
-          <Book 
-            book={content} 
+          <Book
+            book={content}
             showChapterNumbers={settings.showChapterNumbers}
             showVerseNumbers={settings.showVerseNumbers}
             highlightedVerse={highlightedVerse}
             showVerseHighlighter={settings.showVerseHighlighter}
+            bookmarkedVerseKeys={bookmarkedVerseKeys}
             onVerseClick={handleVerseClick}
           />
         </div>
@@ -833,6 +1060,14 @@ export default function Home() {
         autocomplete={bookAutocomplete}
         onTab={handleBookAutocomplete}
       />
+      <BookmarksModal
+        isOpen={activeMode === "bookmarks"}
+        bookmarks={settings.bookmarks}
+        onJump={handleBookmarkJump}
+        onDelete={(b) => removeBookmark(b.book, b.chapter, b.verse)}
+        onClose={cancelCommand}
+      />
+      <Toast message={toast} />
     </>
   );
 }

@@ -1,5 +1,12 @@
 "use client";
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import {
+  toggleBookmarkInList,
+  removeBookmarkFromList,
+  type Bookmark,
+} from "@/utils/bookmarks";
+
+export type { Bookmark };
 
 export interface Settings {
   showChapterNumbers: boolean;
@@ -8,6 +15,7 @@ export interface Settings {
   currentBook: string;
   currentChapter: number;
   contentWidth: number;
+  bookmarks: Bookmark[];
 }
 
 const defaultSettings: Settings = {
@@ -17,6 +25,7 @@ const defaultSettings: Settings = {
   currentBook: "Geneza",
   currentChapter: 1,
   contentWidth: 800,
+  bookmarks: [],
 };
 
 const STORAGE_KEY = "biblia-settings";
@@ -25,6 +34,8 @@ interface SettingsContextType {
   settings: Settings;
   toggleSetting: (key: keyof Pick<Settings, "showChapterNumbers" | "showVerseNumbers" | "showVerseHighlighter">) => void;
   setSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  toggleBookmark: (entry: Bookmark) => void;
+  removeBookmark: (book: string, chapter: number, verse: string) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -87,8 +98,35 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  /**
+   * Adds a bookmark, or removes it if the same (book, chapter, verse) tuple is
+   * already bookmarked (toggle). Wraps the pure list util immutably.
+   * @param entry - Bookmark to toggle.
+   * @returns void
+   */
+  const toggleBookmark = useCallback((entry: Bookmark) => {
+    setSettings((prev) => ({
+      ...prev,
+      bookmarks: toggleBookmarkInList(prev.bookmarks, entry),
+    }));
+  }, []);
+
+  /**
+   * Removes the bookmark matching a (book, chapter, verse) tuple, if present.
+   * @param book - Book name to match.
+   * @param chapter - Chapter number to match.
+   * @param verse - Verse number key to match.
+   * @returns void
+   */
+  const removeBookmark = useCallback((book: string, chapter: number, verse: string) => {
+    setSettings((prev) => ({
+      ...prev,
+      bookmarks: removeBookmarkFromList(prev.bookmarks, book, chapter, verse),
+    }));
+  }, []);
+
   return (
-    <SettingsContext.Provider value={{ settings, toggleSetting, setSetting }}>
+    <SettingsContext.Provider value={{ settings, toggleSetting, setSetting, toggleBookmark, removeBookmark }}>
       {children}
     </SettingsContext.Provider>
   );

@@ -41,3 +41,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# sfaw-maestro plugin runtime files
+.worktrees/
+docs/plans/
+diagnostics/
+.claude/.ticket-approval
+.claude/.ticket-approval.in-flight-*
+.claude/.gh-pr-approval
+.claude/.gh-pr-approval.in-flight-*
+.claude/.audit-trail/

@@ -19,6 +19,8 @@ npm run lint     # ESLint
 - `c` — go to chapter (type a chapter number, Enter to jump)
 - `b` — go to book (type a name, Tab to autocomplete, Enter to jump)
 - `v` — toggle visibility settings (chapter numbers, verse numbers, verse highlighter)
+- `m` — bookmark/unbookmark the highlighted verse (requires the verse highlighter on)
+- `M` — open the bookmarks list (`j`/`k` move, `Enter` jumps + closes, `x` deletes, `Esc` closes)
 - `Escape` — cancel the current modal
 
 ## Architecture

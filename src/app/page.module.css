@@ -45,4 +45,5 @@
   --bookmark-accent: #c99700;
 
   box-shadow: inset 3px 0 0 var(--bookmark-accent);
+  padding-left: 8px;
 }

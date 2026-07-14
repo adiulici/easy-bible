@@ -20,10 +20,12 @@ This is a Romanian Bible reader built with Next.js 15 (App Router) and React 19.
 - Book names list in `src/data/books.json`
 - API route `/api/bible?book=<name>` returns chapters for a book
 - Settings persisted to localStorage via `SettingsContext`
+- If any new setting is added, ask the user if he wants to persist it in the local storage (most likely yes)
 
 ### Keyboard Command System
 
 The app uses a custom keyboard command system (`src/hooks/useKeyboardCommands.ts`) with two command types:
+
 - **Single commands**: Execute immediately (j/k for verse navigation, u/d for page up/down, n/N for previous/next chapter, gg/G for first/last chapter — gg is a two-key chord)
 - **Modal commands**: Open input modals (c for go-to-chapter, b for go-to-book, v for visibility settings)
 

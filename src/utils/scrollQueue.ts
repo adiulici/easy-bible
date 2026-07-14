@@ -79,6 +79,20 @@ function scrollWindowTo(targetY: number, getQueueDepth: () => number): Promise<v
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     };
 
+    // Clamp the target into the actually scrollable range. window.scrollTo
+    // silently clamps the position it applies, so an out-of-bounds target
+    // (a j nudge past the bottom, a k nudge above the top) can never be
+    // reached - window.scrollY plateaus at the boundary while `remaining`
+    // stays > 1 forever, so the step loop below would spin indefinitely:
+    // it never settles, jams the serial queue behind it, and keeps yanking
+    // the page back toward the unreachable target every frame (fighting any
+    // manual scroll away from the edge). Clamping makes the target reachable.
+    const maxScrollY = Math.max(
+      0,
+      document.documentElement.scrollHeight - window.innerHeight
+    );
+    targetY = Math.max(0, Math.min(targetY, maxScrollY));
+
     const totalDistance = Math.abs(targetY - window.scrollY);
     if (totalDistance < 1) {
       settle();

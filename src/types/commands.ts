@@ -2,7 +2,7 @@
  * Type definitions for the keyboard command system
  */
 
-export type CommandMode = null | "goto-chapter" | "goto-book" | "visibility" | "bookmarks";
+export type CommandMode = null | "goto-chapter" | "goto-book" | "visibility" | "bookmarks" | "translation";
 
 export type CommandType = "single" | "modal";
 

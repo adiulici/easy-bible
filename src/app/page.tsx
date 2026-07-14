@@ -1,16 +1,25 @@
 "use client";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, type CSSProperties } from "react";
 import styles from "./page.module.css";
 import { useKeyboardCommands } from "@/hooks/useKeyboardCommands";
 import VisibilityModal from "@/components/VisibilityModal";
 import CommandModal from "@/components/CommandModal";
 import BookmarksModal from "@/components/BookmarksModal";
+import TranslationModal from "@/components/TranslationModal";
 import Toast from "@/components/Toast";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
 import { createScrollQueue } from "@/utils/scrollQueue";
 import { buildVerseSnippet, decidePendingJump, type Bookmark } from "@/utils/bookmarks";
+import type { Block, BookContent } from "@/types/bible";
+import { TRANSLATION_LABELS } from "@/types/bible";
+import {
+  firstVerseNumber,
+  lastVerseNumber,
+  findVerseText,
+  flattenVerses,
+} from "@/utils/blocks";
 
 // Single shared queue for every programmatic window scroll (chapter jumps,
 // verse-into-view nudges, j/k page nudges), so overlapping smooth-scroll
@@ -78,48 +87,154 @@ function getDominantChapterInReadingBand(chapterKeys: string[]): number | null {
   return dominant;
 }
 
-function Chapter({
-  chapter,
-  chapterNumber,
-  showVerseNumbers,
-  highlightedVerse,
-  showVerseHighlighter,
-  bookmarkedVerseKeys,
-  onVerseClick,
-}: {
-  chapter: { number: string; text: string }[];
+/**
+ * Picks the semantic element for a heading block. Section headings become real
+ * headings (nested under the book's <h1>); chapter labels, psalm ascriptions and
+ * major-section reference ranges are decorative labels, so they stay <div>.
+ * @param level - The heading's source style class (e.g. "s1", "ms1", "cl").
+ * @returns The tag name to render the heading with.
+ */
+function headingTag(level: string): "h2" | "h3" | "div" {
+  switch (level) {
+    case "ms1":
+    case "s1":
+      return "h2";
+    case "ms2":
+    case "s2":
+      return "h3";
+    default:
+      // mr (reference range), cl (chapter label), d (ascription): labels, not headings.
+      return "div";
+  }
+}
+
+type ChapterRenderProps = {
+  blocks: Block[];
   chapterNumber: number;
   showVerseNumbers: boolean;
   highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
   bookmarkedVerseKeys: Set<string>;
   onVerseClick: (chapter: number, verse: string) => void;
-}) {
+};
+
+/**
+ * Renders one chapter's block structure (headings, poetry, prose paragraphs)
+ * while preserving the per-verse hooks the reader relies on: `data-chapter` /
+ * `data-verse` attributes (for scroll + highlight lookups), the highlight and
+ * bookmark classes, and click-to-select. Verse numbers show once per verse
+ * (at its first line), so multi-line poetry verses aren't renumbered.
+ * @param props - Chapter blocks, chapter number, and display/interaction state.
+ * @returns The chapter's rendered blocks.
+ */
+function Chapter({
+  blocks,
+  chapterNumber,
+  showVerseNumbers,
+  highlightedVerse,
+  showVerseHighlighter,
+  bookmarkedVerseKeys,
+  onVerseClick,
+}: ChapterRenderProps) {
+  // Tracks verse numbers already rendered in this chapter so the verse number
+  // shows once (at a verse's first line), not on every continuation line.
+  const shown = new Set<string>();
+  const isFirstOccurrence = (verseKey: string): boolean => {
+    if (shown.has(verseKey)) {
+      return false;
+    }
+    shown.add(verseKey);
+    return true;
+  };
+
+  const verseClassName = (verseKey: string): string => {
+    const isHighlighted =
+      highlightedVerse?.chapter === chapterNumber && highlightedVerse?.verse === verseKey;
+    const isBookmarked = bookmarkedVerseKeys.has(`${chapterNumber}:${verseKey}`);
+    return `${styles.verse} ${showVerseHighlighter && isHighlighted ? styles.verseHighlighted : ""} ${isBookmarked ? styles.verseBookmarked : ""}`;
+  };
+
+  /**
+   * Renders a single verse-bearing span (used by both prose and poetry).
+   * @param verseKey - Verse-number key (e.g. "3").
+   * @param text - The verse (or line) text.
+   * @param key - React key.
+   * @returns The verse span element.
+   */
+  const renderVerse = (verseKey: string, text: string, key: string) => {
+    const showNumber = showVerseNumbers && isFirstOccurrence(verseKey);
+    return (
+      <span
+        key={key}
+        data-chapter={chapterNumber}
+        data-verse={verseKey}
+        className={verseClassName(verseKey)}
+        onClick={() => onVerseClick(chapterNumber, verseKey)}
+      >
+        {showNumber && <sup className={styles.verseNumber}>{verseKey}</sup>}
+        {text}
+      </span>
+    );
+  };
+
   return (
     <>
-      {chapter.map((data) => {
-        const isHighlighted = highlightedVerse?.chapter === chapterNumber &&
-                              highlightedVerse?.verse === data.number;
-        const isBookmarked = bookmarkedVerseKeys.has(`${chapterNumber}:${data.number}`);
+      {blocks.map((block, blockIndex) => {
+        if (block.type === "heading") {
+          const level = block.level;
+          const Tag = headingTag(level);
+          return (
+            <Tag
+              key={blockIndex}
+              className={`${styles.heading} ${styles[`heading_${level}`] ?? ""}`}
+              data-level={level}
+            >
+              {block.text}
+            </Tag>
+          );
+        }
+
+        if (block.type === "paragraph") {
+          return (
+            <p key={blockIndex} className={styles.paragraph}>
+              {block.verses.map((v, i) =>
+                renderVerse(String(v.verse), `${v.text} `, `${blockIndex}-${i}`)
+              )}
+            </p>
+          );
+        }
+
+        // poetry
         return (
-          <span
-            key={data.number}
-            data-chapter={chapterNumber}
-            data-verse={data.number}
-            className={`${styles.verse} ${showVerseHighlighter && isHighlighted ? styles.verseHighlighted : ''} ${isBookmarked ? styles.verseBookmarked : ''}`}
-            onClick={() => onVerseClick(chapterNumber, data.number)}
-          >
-            {showVerseNumbers && (
-              <sup className={styles.verseNumber}>{data.number}</sup>
-            )}
-            <span dangerouslySetInnerHTML={{ __html: `${data.text} ` }}></span>
-          </span>
+          <div key={blockIndex} className={styles.poetry}>
+            {block.lines.map((line, i) => {
+              if (line.verse === null) {
+                return <div key={i} className={styles.poetryBlank} aria-hidden="true" />;
+              }
+              return (
+                <div
+                  key={i}
+                  className={styles.poetryLine}
+                  style={{ "--indent": line.indent } as CSSProperties}
+                >
+                  {renderVerse(String(line.verse), line.text, `${blockIndex}-${i}`)}
+                </div>
+              );
+            })}
+          </div>
         );
       })}
     </>
   );
 }
 
+/**
+ * Renders every loaded chapter of a book, each wrapped in a positioned
+ * container carrying its `chapter-<n>` id (scroll target) and optional
+ * watermark number.
+ * @param props - Book content and display/interaction state.
+ * @returns The book's rendered chapters.
+ */
 function Book({
   book,
   showChapterNumbers,
@@ -129,7 +244,7 @@ function Book({
   bookmarkedVerseKeys,
   onVerseClick,
 }: {
-  book: { [key: string]: { number: string; text: string }[] };
+  book: BookContent;
   showChapterNumbers: boolean;
   showVerseNumbers: boolean;
   highlightedVerse: { chapter: number; verse: string } | null;
@@ -139,15 +254,15 @@ function Book({
 }) {
   return (
     <>
-      {Object.entries(book).map(([chapterKey, chapter]) => {
+      {Object.entries(book).map(([chapterKey, blocks]) => {
         const chapterNum = parseInt(chapterKey, 10);
         return (
-          <p key={chapterKey} id={`chapter-${chapterKey}`}>
+          <div key={chapterKey} id={`chapter-${chapterKey}`} className={styles.chapterBlock}>
             {showChapterNumbers && (
               <span className={styles.chapter}>{chapterNum}.</span>
             )}
             <Chapter
-              chapter={chapter}
+              blocks={blocks}
               chapterNumber={chapterNum}
               showVerseNumbers={showVerseNumbers}
               highlightedVerse={highlightedVerse}
@@ -155,7 +270,7 @@ function Book({
               bookmarkedVerseKeys={bookmarkedVerseKeys}
               onVerseClick={onVerseClick}
             />
-          </p>
+          </div>
         );
       })}
     </>
@@ -163,9 +278,7 @@ function Book({
 }
 
 export default function Home() {
-  const [content, setContent] = useState<{
-    [key: string]: { number: string; text: string }[];
-  }>({});
+  const [content, setContent] = useState<BookContent>({});
   
   // Settings from context
   const { settings, toggleSetting, setSetting, toggleBookmark, removeBookmark } = useSettings();
@@ -197,17 +310,9 @@ export default function Home() {
   // Keyboard commands hook
   const { activeMode, inputBuffer, registerCommand, cancelCommand, setInputBuffer } = useKeyboardCommands();
 
-  // Build a flat list of all verses for navigation
-  const allVerses = useMemo(() => {
-    const verses: { chapter: number; verse: string }[] = [];
-    Object.entries(content).forEach(([chapterKey, chapter]) => {
-      const chapterNum = parseInt(chapterKey, 10);
-      chapter.forEach((v) => {
-        verses.push({ chapter: chapterNum, verse: v.number });
-      });
-    });
-    return verses;
-  }, [content]);
+  // Build a flat list of all verses for navigation (one entry per distinct
+  // verse, in reading order across the block structure).
+  const allVerses = useMemo(() => flattenVerses(content), [content]);
 
   // Vimium-style scroll step used by j/k when the verse highlighter is off
   const SCROLL_STEP_PX = 100;
@@ -448,12 +553,12 @@ export default function Home() {
       return;
     }
     const { chapter, verse } = highlightedVerse;
-    const verseText = content[String(chapter)]?.find((v) => v.number === verse)?.text;
+    const verseText = findVerseText(content[String(chapter)] ?? [], verse);
     toggleBookmark({
       book: currentBook,
       chapter,
       verse,
-      text: buildVerseSnippet(verseText ?? ""),
+      text: buildVerseSnippet(verseText),
       createdAt: Date.now(),
     });
   }, [toggleBookmark, showToast]);
@@ -482,9 +587,9 @@ export default function Home() {
       // Scroll to chapter
       smoothScrollToChapter(chapterKey);
       // Reset verse highlighter to first verse of new chapter
-      const firstVerse = content[chapterKey][0];
+      const firstVerse = firstVerseNumber(content[chapterKey]);
       if (firstVerse) {
-        setHighlightedVerse({ chapter: nextChapter, verse: firstVerse.number });
+        setHighlightedVerse({ chapter: nextChapter, verse: firstVerse });
       }
     }
     // If at last chapter, do nothing
@@ -507,9 +612,9 @@ export default function Home() {
       // Scroll to chapter
       smoothScrollToChapter(chapterKey);
       // Reset verse highlighter to first verse of new chapter
-      const firstVerse = content[chapterKey][0];
+      const firstVerse = firstVerseNumber(content[chapterKey]);
       if (firstVerse) {
-        setHighlightedVerse({ chapter: prevChapter, verse: firstVerse.number });
+        setHighlightedVerse({ chapter: prevChapter, verse: firstVerse });
       }
     }
     // If at first chapter, do nothing
@@ -531,9 +636,9 @@ export default function Home() {
     const firstChapterNumber = parseInt(firstChapterKey, 10);
     setSetting("currentChapter", firstChapterNumber);
     smoothScrollToChapter(firstChapterKey);
-    const firstVerse = content[firstChapterKey][0];
+    const firstVerse = firstVerseNumber(content[firstChapterKey]);
     if (firstVerse) {
-      setHighlightedVerse({ chapter: firstChapterNumber, verse: firstVerse.number });
+      setHighlightedVerse({ chapter: firstChapterNumber, verse: firstVerse });
     }
   }, [activeMode, content, setSetting]);
 
@@ -553,10 +658,9 @@ export default function Home() {
     const lastChapterNumber = parseInt(lastChapterKey, 10);
     setSetting("currentChapter", lastChapterNumber);
     smoothScrollToChapter(lastChapterKey);
-    const lastChapterVerses = content[lastChapterKey];
-    const lastVerse = lastChapterVerses[lastChapterVerses.length - 1];
+    const lastVerse = lastVerseNumber(content[lastChapterKey]);
     if (lastVerse) {
-      setHighlightedVerse({ chapter: lastChapterNumber, verse: lastVerse.number });
+      setHighlightedVerse({ chapter: lastChapterNumber, verse: lastVerse });
     }
   }, [activeMode, content, setSetting]);
 
@@ -726,6 +830,11 @@ export default function Home() {
       type: "modal",
       mode: "bookmarks",
     });
+    registerCommand({
+      key: "t",
+      type: "modal",
+      mode: "translation",
+    });
   }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth, handleToggleBookmark]);
 
   // Handle visibility modal open/close based on activeMode
@@ -829,11 +938,11 @@ export default function Home() {
       return;
     }
     const firstChapterKey = Object.keys(content)[0];
-    const firstChapter = content[firstChapterKey];
-    if (firstChapter && firstChapter.length > 0) {
+    const firstVerse = firstVerseNumber(content[firstChapterKey]);
+    if (firstVerse) {
       setHighlightedVerse({
         chapter: parseInt(firstChapterKey, 10),
-        verse: firstChapter[0].number,
+        verse: firstVerse,
       });
     }
   }, [settings.currentBook, content]);
@@ -895,7 +1004,9 @@ export default function Home() {
     // Guards against a slower response for a book the reader has since
     // navigated away from overwriting the content of the current book
     let isStale = false;
-    fetch("/api/bible?book=" + encodeURIComponent(settings.currentBook))
+    fetch(
+      `/api/bible?book=${encodeURIComponent(settings.currentBook)}&version=${settings.currentTranslation}`
+    )
       .then((response) => response.json())
       .then((data) => {
         if (isStale) return;
@@ -925,7 +1036,7 @@ export default function Home() {
     return () => {
       isStale = true;
     };
-  }, [settings.currentBook, showToast, setSetting]);
+  }, [settings.currentBook, settings.currentTranslation, showToast, setSetting]);
 
   // Scroll to saved currentChapter on initial page load
   useEffect(() => {
@@ -1020,6 +1131,12 @@ export default function Home() {
         style={{ maxWidth: `min(${settings.contentWidth}px, calc(100vw - ${CONTENT_WIDTH_MARGIN}px))` }}
       >
         <h1>{settings.currentBook}</h1>
+        <div
+          className={styles.translationBadge}
+          title={TRANSLATION_LABELS[settings.currentTranslation]}
+        >
+          {settings.currentTranslation}
+        </div>
         <div className={styles.content} ref={contentRef}>
           <Book
             book={content}
@@ -1065,6 +1182,12 @@ export default function Home() {
         bookmarks={settings.bookmarks}
         onJump={handleBookmarkJump}
         onDelete={(b) => removeBookmark(b.book, b.chapter, b.verse)}
+        onClose={cancelCommand}
+      />
+      <TranslationModal
+        isOpen={activeMode === "translation"}
+        current={settings.currentTranslation}
+        onSelect={(t) => setSetting("currentTranslation", t)}
         onClose={cancelCommand}
       />
       <Toast message={toast} />

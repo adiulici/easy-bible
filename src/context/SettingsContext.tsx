@@ -5,6 +5,7 @@ import {
   removeBookmarkFromList,
   type Bookmark,
 } from "@/utils/bookmarks";
+import type { Translation } from "@/types/bible";
 
 export type { Bookmark };
 
@@ -14,6 +15,7 @@ export interface Settings {
   showVerseHighlighter: boolean;
   currentBook: string;
   currentChapter: number;
+  currentTranslation: Translation;
   contentWidth: number;
   bookmarks: Bookmark[];
 }
@@ -24,6 +26,7 @@ const defaultSettings: Settings = {
   showVerseHighlighter: false,
   currentBook: "Geneza",
   currentChapter: 1,
+  currentTranslation: "VDC",
   contentWidth: 800,
   bookmarks: [],
 };

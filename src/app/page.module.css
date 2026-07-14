@@ -7,6 +7,27 @@
   border-top: double 4px #ccc;
   border-bottom: double 4px #ccc;
   position: relative;
+  font-family: "Domine", serif;
+  font-size: 1.1rem;
+  --poetry-indent-step: 1.6rem;
+}
+
+/* Muted, centered code shown under the book title (e.g. "VDC"). Pulled up into
+   the h1's bottom margin so it reads as a subtitle of the title. */
+.translationBadge {
+  margin-top: -2rem;
+  margin-bottom: 2rem;
+  text-align: center;
+  font-family: "Domine", serif;
+  font-size: 0.8rem;
+  letter-spacing: 0.15em;
+  color: #999;
+}
+
+/* Each chapter is a positioned container so its watermark number anchors to the
+   chapter (not the whole content column) and sits behind the text. */
+.chapterBlock {
+  position: relative;
 }
 
 .chapter {
@@ -46,4 +67,97 @@
 
   box-shadow: inset 3px 0 0 var(--bookmark-accent);
   padding-left: 8px;
+}
+
+/* Prose paragraphs inherit the global <p> reading style (Domine, indented,
+   airy line-height); this class is a hook for future overrides. */
+.paragraph {
+  position: relative;
+}
+
+/* --- Headings (source style classes drive the visual tier) --- */
+.heading {
+  font-family: "Domine", serif;
+  text-indent: 0;
+  line-height: 1.4;
+  color: #333;
+}
+
+/* Major section title (ms1) — the largest tier. */
+.heading_ms1 {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 2.5rem 0 0.5rem;
+}
+
+/* Major section subtitle (ms2). */
+.heading_ms2 {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #555;
+  margin: 0.25rem 0;
+}
+
+/* Major-section reference range (mr), e.g. "CAPITOLELE 1—11:9". */
+.heading_mr {
+  text-align: center;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: #999;
+  margin: 0.25rem 0 1.5rem;
+}
+
+/* Chapter label (cl), e.g. "PSALMUL 23". */
+.heading_cl {
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.5rem;
+}
+
+/* Psalm ascription / musical direction (d), e.g. "O cântare a lui David". */
+.heading_d {
+  text-align: center;
+  font-style: italic;
+  color: #777;
+  margin: 0 0 1.5rem;
+}
+
+/* Section heading (s1) — the common in-chapter subtitle. */
+.heading_s1 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 2rem 0 0.75rem;
+}
+
+/* Subsection heading (s2). */
+.heading_s2 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #555;
+  margin: 1.5rem 0 0.5rem;
+}
+
+/* --- Poetry --- */
+.poetry {
+  margin: 0 0 0.5rem;
+}
+
+/* One physical line of poetry; indent depth comes from the --indent custom
+   property set inline, scaled by the reading column's indent step. */
+.poetryLine {
+  text-indent: 0;
+  line-height: 1.7;
+  padding-left: calc(var(--indent, 0) * var(--poetry-indent-step));
+}
+
+/* Blank spacer line between poetry stanzas. */
+.poetryBlank {
+  height: 1rem;
 }

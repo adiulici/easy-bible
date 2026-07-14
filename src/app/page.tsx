@@ -192,6 +192,28 @@ export default function Home() {
   // for reading continuity across the jump
   const PAGE_SCROLL_OVERLAP_PX = 60;
 
+  // Counts suppress-tracking scroll presses (j/k nudges and d/u page scrolls)
+  // that haven't settled yet, so a rapid burst (or held-down key) only
+  // resyncs currentChapter once, after the *last* one settles - not once per
+  // coalesced task. Resyncing after every task would call setSetting
+  // mid-burst, and the resulting re-render would stall the next queued task's
+  // requestAnimationFrame loop right as it's meant to start, which is just as
+  // visible as the original jank.
+  const pendingScrollResyncs = useRef(0);
+
+  // Resyncs currentChapter after a suppress-tracking scroll settles, since
+  // tracking was off (and thus not updating it) during the scroll itself.
+  const resyncCurrentChapterFromScroll = useCallback(() => {
+    pendingScrollResyncs.current--;
+    if (pendingScrollResyncs.current > 0) {
+      return;
+    }
+    const dominant = getDominantChapterInReadingBand(Object.keys(content));
+    if (dominant !== null && dominant !== currentChapterRef.current) {
+      setSetting("currentChapter", dominant);
+    }
+  }, [content, setSetting]);
+
   // Handle verse highlighter navigation with throttling for smooth key repeat
   const handleMoveHighlighterDown = useCallback(() => {
     // Only work when no modal is open
@@ -206,9 +228,18 @@ export default function Home() {
     }
     lastNavigationTime.current = now;
 
-    // With the highlighter off, j/k just nudge the scroll position (Vimium-style)
+    // With the highlighter off, j/k just nudge the scroll position
+    // (Vimium-style). suppressTracking + deferred resync mirrors d/u: without
+    // it, a held key eventually scrolls across a chapter boundary, the
+    // reading-band IntersectionObserver fires setSetting("currentChapter")
+    // mid-scroll, and the re-render of the whole unvirtualized book stalls the
+    // animation's requestAnimationFrame loop - the "janky when held" symptom.
+    // Tracking is resynced once the burst settles instead.
     if (!settings.showVerseHighlighter) {
-      scrollQueue.enqueueDelta(SCROLL_STEP_PX, "highlighter-nudge");
+      pendingScrollResyncs.current++;
+      scrollQueue
+        .enqueueDelta(SCROLL_STEP_PX, "highlighter-nudge", { suppressTracking: true })
+        .then(resyncCurrentChapterFromScroll);
       return;
     }
 
@@ -225,7 +256,7 @@ export default function Home() {
       }
       return prev;
     });
-  }, [activeMode, allVerses, settings.showVerseHighlighter]);
+  }, [activeMode, allVerses, settings.showVerseHighlighter, resyncCurrentChapterFromScroll]);
 
   const handleMoveHighlighterUp = useCallback(() => {
     // Only work when no modal is open
@@ -240,9 +271,12 @@ export default function Home() {
     }
     lastNavigationTime.current = now;
 
-    // With the highlighter off, j/k just nudge the scroll position (Vimium-style)
+    // See handleMoveHighlighterDown for why this suppresses tracking + resyncs
     if (!settings.showVerseHighlighter) {
-      scrollQueue.enqueueDelta(-SCROLL_STEP_PX, "highlighter-nudge");
+      pendingScrollResyncs.current++;
+      scrollQueue
+        .enqueueDelta(-SCROLL_STEP_PX, "highlighter-nudge", { suppressTracking: true })
+        .then(resyncCurrentChapterFromScroll);
       return;
     }
 
@@ -259,7 +293,7 @@ export default function Home() {
       }
       return prev;
     });
-  }, [activeMode, allVerses, settings.showVerseHighlighter]);
+  }, [activeMode, allVerses, settings.showVerseHighlighter, resyncCurrentChapterFromScroll]);
 
   // Handle verse click - always switch to that verse, even if highlighter is off
   const handleVerseClick = useCallback((chapter: number, verse: string) => {
@@ -368,27 +402,6 @@ export default function Home() {
     }
   }, [activeMode, content, setSetting]);
 
-  // Counts page-scroll presses that haven't settled yet, so a rapid burst
-  // (or held-down key) only resyncs currentChapter once, after the *last*
-  // one settles - not once per coalesced task. Resyncing after every task
-  // would call setSetting mid-burst, and the resulting re-render would stall
-  // the next queued task's requestAnimationFrame loop right as it's meant
-  // to start, which is just as visible as the original jank.
-  const pendingPageScrollResyncs = useRef(0);
-
-  // Resyncs currentChapter after a suppress-tracking scroll settles, since
-  // tracking was off (and thus not updating it) during the scroll itself.
-  const resyncCurrentChapterFromScroll = useCallback(() => {
-    pendingPageScrollResyncs.current--;
-    if (pendingPageScrollResyncs.current > 0) {
-      return;
-    }
-    const dominant = getDominantChapterInReadingBand(Object.keys(content));
-    if (dominant !== null && dominant !== currentChapterRef.current) {
-      setSetting("currentChapter", dominant);
-    }
-  }, [content, setSetting]);
-
   // Handle page down/up - a plain viewport-height scroll, not tied to
   // chapter boundaries. Tracking is suppressed *during* the scroll and
   // resynced once it settles, rather than left live throughout: a page
@@ -403,7 +416,7 @@ export default function Home() {
       return;
     }
 
-    pendingPageScrollResyncs.current++;
+    pendingScrollResyncs.current++;
     scrollQueue
       .enqueueDelta(window.innerHeight - PAGE_SCROLL_OVERLAP_PX, "page-scroll", { suppressTracking: true })
       .then(resyncCurrentChapterFromScroll);
@@ -415,7 +428,7 @@ export default function Home() {
       return;
     }
 
-    pendingPageScrollResyncs.current++;
+    pendingScrollResyncs.current++;
     scrollQueue
       .enqueueDelta(-(window.innerHeight - PAGE_SCROLL_OVERLAP_PX), "page-scroll", { suppressTracking: true })
       .then(resyncCurrentChapterFromScroll);

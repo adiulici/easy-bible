@@ -49,6 +49,13 @@ const MAX_SPEED_MULTIPLIER = 8;
 // gg/G across a long book) would crawl along at the same fixed speed as a
 // short one and take proportionally forever.
 const MAX_DURATION_MS = 600;
+// The mirror of MAX_DURATION_MS: a short trip's speed is also capped so the
+// trip can't take *less* than this. Without it, a small nudge (the j/k
+// ~100px page step) finishes in a frame or two at BASE_SPEED and reads as an
+// instant jump instead of a scroll. Only bites for trips short enough that
+// base speed would otherwise blow past it; longer trips (d/u, chapter jumps)
+// stay at base speed since their distance keeps them above this ceiling.
+const MIN_DURATION_MS = 150;
 // Caps how large a single frame's step can be after a dropped frame or a
 // backgrounded tab, so the queue can't "teleport" past its target.
 const MAX_FRAME_DELTA_MS = 50;
@@ -78,10 +85,13 @@ function scrollWindowTo(targetY: number, getQueueDepth: () => number): Promise<v
       return;
     }
 
-    // The whole trip's distance, known upfront, floors the speed so a huge
-    // jump still finishes within MAX_DURATION_MS - not the (shrinking)
-    // remaining distance, which would let it decelerate near the end.
+    // The whole trip's distance, known upfront, bounds the speed at both ends
+    // so the trip lands within [MIN_DURATION_MS, MAX_DURATION_MS] - based on
+    // total (not shrinking remaining) distance, which would otherwise let it
+    // decelerate near the end. minSpeed keeps a huge jump from crawling;
+    // maxSpeed keeps a tiny nudge from finishing in a single frame.
     const minSpeedForDuration = totalDistance / MAX_DURATION_MS;
+    const maxSpeedForDuration = totalDistance / MIN_DURATION_MS;
 
     let lastTime = performance.now();
     const step = (now: number) => {
@@ -97,7 +107,14 @@ function scrollWindowTo(targetY: number, getQueueDepth: () => number): Promise<v
       }
 
       const speedMultiplier = Math.min(MAX_SPEED_MULTIPLIER, 1 + getQueueDepth());
-      const speed = Math.max(BASE_SPEED_PX_PER_MS * speedMultiplier, minSpeedForDuration);
+      // Clamp into the duration band. maxSpeedForDuration >= minSpeedForDuration
+      // always (MIN_DURATION_MS < MAX_DURATION_MS), so the ceiling never fights
+      // the floor: a long jump sits at/above base speed (floor irrelevant, ceiling
+      // high), a short nudge is pulled down to the ceiling so it stays visible.
+      const speed = Math.min(
+        Math.max(BASE_SPEED_PX_PER_MS * speedMultiplier, minSpeedForDuration),
+        maxSpeedForDuration
+      );
       const moveBy = Math.sign(remaining) * Math.min(Math.abs(remaining), speed * dt);
       window.scrollTo({ top: current + moveBy, behavior: "auto" });
       requestAnimationFrame(step);

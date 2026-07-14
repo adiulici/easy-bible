@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## General rules
+
+- Work always on main, unless the user explicitly asks otherwise
+- No commits: only the user makes commits
+
 ## Commands
 
 ```bash

@@ -7,6 +7,7 @@ import CommandModal from "@/components/CommandModal";
 import BookmarksModal from "@/components/BookmarksModal";
 import TranslationModal from "@/components/TranslationModal";
 import Toast from "@/components/Toast";
+import StickyHeader from "@/components/StickyHeader";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
@@ -1059,6 +1060,9 @@ export default function Home() {
     currentChapterRef.current = settings.currentChapter;
   }, [settings.currentChapter]);
 
+  const headerSentinelRef = useRef<HTMLDivElement>(null);
+  const [isHeaderOffscreen, setIsHeaderOffscreen] = useState(false);
+
   // Intersection Observer to track visible chapter
   useEffect(() => {
     if (Object.keys(content).length === 0) {
@@ -1124,8 +1128,35 @@ export default function Home() {
     };
   }, [content, setSetting]);
 
+  // Intersection Observer to show/hide the sticky mini header once the main
+  // header (book title + translation badge) scrolls out of view. Deliberately
+  // separate from the chapter-tracking observer above: different target,
+  // different lifecycle (this one never needs to re-run per chapter load).
+  useEffect(() => {
+    const sentinel = headerSentinelRef.current;
+    if (!sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      setIsHeaderOffscreen(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    }, { threshold: 0 });
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   return (
     <>
+      <StickyHeader
+        bookName={settings.currentBook}
+        translationCode={settings.currentTranslation}
+        translationLabel={TRANSLATION_LABELS[settings.currentTranslation]}
+        visible={isHeaderOffscreen}
+      />
       <div
         className={styles.container}
         style={{ maxWidth: `min(${settings.contentWidth}px, calc(100vw - ${CONTENT_WIDTH_MARGIN}px))` }}
@@ -1137,6 +1168,7 @@ export default function Home() {
         >
           {settings.currentTranslation}
         </div>
+        <div ref={headerSentinelRef} />
         <div className={styles.content} ref={contentRef}>
           <Book
             book={content}

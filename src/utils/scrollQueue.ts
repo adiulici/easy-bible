@@ -31,6 +31,7 @@ interface QueueTask {
   getTargetY?: () => number | null;
   delta?: number;
   suppressTracking: boolean;
+  instant: boolean;
   // Callers waiting on this task - a coalesced task can have more than one,
   // since several enqueue calls may have merged into it before it ran.
   resolvers: Array<() => void>;
@@ -71,9 +72,10 @@ const MAX_FRAME_DELTA_MS = 50;
  * new position get a chance to fire before the caller proceeds.
  * @param targetY - Absolute vertical scroll offset to animate to.
  * @param getQueueDepth - Called every frame; returns the current number of tasks waiting behind this one.
+ * @param instant - Skip the animation and snap straight to targetY.
  * @returns Promise that resolves once the scroll (and settle grace period) completes.
  */
-function scrollWindowTo(targetY: number, getQueueDepth: () => number): Promise<void> {
+function scrollWindowTo(targetY: number, getQueueDepth: () => number, instant = false): Promise<void> {
   return new Promise((resolve) => {
     const settle = () => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
@@ -92,6 +94,12 @@ function scrollWindowTo(targetY: number, getQueueDepth: () => number): Promise<v
       document.documentElement.scrollHeight - window.innerHeight
     );
     targetY = Math.max(0, Math.min(targetY, maxScrollY));
+
+    if (instant) {
+      window.scrollTo({ top: targetY, behavior: "auto" });
+      settle();
+      return;
+    }
 
     const totalDistance = Math.abs(targetY - window.scrollY);
     if (totalDistance < 1) {
@@ -167,7 +175,7 @@ export function createScrollQueue() {
       try {
         // Pass a live accessor (not a snapshot) so tasks queued up *after*
         // this one starts running still speed up its animation immediately.
-        await scrollWindowTo(targetY, () => queue.length);
+        await scrollWindowTo(targetY, () => queue.length, task.instant);
       } finally {
         if (task.suppressTracking) {
           suppressCount--;
@@ -185,11 +193,12 @@ export function createScrollQueue() {
    * @param getTargetY - Called at execution time; returns the absolute Y to scroll to, or null to skip.
    * @param options.coalesceKey - If a not-yet-started task shares this key, its target is replaced instead of queueing a new task.
    * @param options.suppressTracking - Whether to mark chapter tracking as suppressed for the duration of this scroll.
+   * @param options.instant - Skip the animation and snap straight to the target.
    * @returns Promise that resolves once this (possibly coalesced) task completes or is skipped.
    */
   const enqueueAbsolute = (
     getTargetY: () => number | null,
-    options: { coalesceKey?: string; suppressTracking?: boolean } = {}
+    options: { coalesceKey?: string; suppressTracking?: boolean; instant?: boolean } = {}
   ): Promise<void> => {
     return new Promise((resolve) => {
       if (options.coalesceKey) {
@@ -198,6 +207,7 @@ export function createScrollQueue() {
         );
         if (existing) {
           existing.getTargetY = getTargetY;
+          existing.instant = options.instant ?? existing.instant;
           existing.resolvers.push(resolve);
           return;
         }
@@ -207,6 +217,7 @@ export function createScrollQueue() {
         coalesceKey: options.coalesceKey,
         getTargetY,
         suppressTracking: options.suppressTracking ?? false,
+        instant: options.instant ?? false,
         resolvers: [resolve],
       });
       drain();
@@ -240,6 +251,7 @@ export function createScrollQueue() {
         coalesceKey,
         delta,
         suppressTracking: options.suppressTracking ?? false,
+        instant: false,
         resolvers: [resolve],
       });
       drain();

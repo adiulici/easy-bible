@@ -77,11 +77,14 @@ export function removeBookmarkFromList(
   return list.filter((b) => bookmarkId(b.book, b.chapter, b.verse) !== id);
 }
 
-/** A cross-book bookmark jump awaiting the target book's content to load. */
+/** A cross-book jump (bookmark or go-to-book) awaiting the target book's content to load. */
 export interface PendingJump {
   book: string;
   chapter: number;
-  verse: string;
+  /** Verse to highlight/center on completion; omitted for a chapter-only jump. */
+  verse?: string;
+  /** Skip the scroll animation and snap straight to the target on completion. */
+  instant?: boolean;
 }
 
 /** The action a content commit should take for a pending cross-book jump. */
@@ -92,16 +95,16 @@ export type JumpDecision =
   | { action: "abandon" }
   /** Target book loaded but the target chapter is absent - drop (clear the ref). */
   | { action: "drop-stale" }
-  /** Target book + chapter present - complete: highlight + scroll to the verse. */
-  | { action: "complete"; chapter: number; verse: string };
+  /** Target book + chapter present - complete: highlight + scroll (verse omitted for a chapter-only jump). */
+  | { action: "complete"; chapter: number; verse?: string; instant?: boolean };
 
 /**
- * Pure decision for completing a pending cross-book bookmark jump, evaluated on
- * each content commit. Gates on the book `content` ACTUALLY holds
- * (`contentBook`) rather than the synchronously-flipped current-book setting, so
- * a jump never completes against the previous book's stale content. If content
- * has loaded for a different book, the jump was superseded and must be abandoned
- * (so a stashed ref can't permanently suppress later first-verse resets).
+ * Pure decision for completing a pending cross-book jump, evaluated on each
+ * content commit. Gates on the book `content` ACTUALLY holds (`contentBook`)
+ * rather than the synchronously-flipped current-book setting, so a jump never
+ * completes against the previous book's stale content. If content has loaded
+ * for a different book, the jump was superseded and must be abandoned (so a
+ * stashed ref can't permanently suppress later first-verse resets).
  * @param pending - The pending jump target, or null if none is in flight.
  * @param contentBook - The book that the currently-loaded content belongs to.
  * @param contentChapterKeys - Chapter keys present in the loaded content (e.g. ["1","2"]).
@@ -121,7 +124,7 @@ export function decidePendingJump(
   if (!contentChapterKeys.includes(String(pending.chapter))) {
     return { action: "drop-stale" };
   }
-  return { action: "complete", chapter: pending.chapter, verse: pending.verse };
+  return { action: "complete", chapter: pending.chapter, verse: pending.verse, instant: pending.instant };
 }
 
 /**

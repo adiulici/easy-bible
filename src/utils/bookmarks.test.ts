@@ -170,4 +170,16 @@ describe("decidePendingJump", () => {
     const decision = decidePendingJump(pending, "Ioan", ["1", "2"]);
     expect(decision).toEqual({ action: "drop-stale" });
   });
+
+  it("completes with verse omitted for a chapter-only pending jump", () => {
+    const chapterOnly = { book: "Ioan", chapter: 3 };
+    const decision = decidePendingJump(chapterOnly, "Ioan", ["1", "2", "3"]);
+    expect(decision).toEqual({ action: "complete", chapter: 3, verse: undefined, instant: undefined });
+  });
+
+  it("carries the instant flag through to the completed decision", () => {
+    const instantPending = { book: "Ioan", chapter: 3, verse: "16", instant: true };
+    const decision = decidePendingJump(instantPending, "Ioan", ["1", "2", "3"]);
+    expect(decision).toEqual({ action: "complete", chapter: 3, verse: "16", instant: true });
+  });
 });

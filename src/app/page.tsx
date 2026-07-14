@@ -11,6 +11,7 @@ import StickyHeader from "@/components/StickyHeader";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
+import { parseBookNavigationInput, hasChapterSuffix } from "@/utils/bookNavigation";
 import { createScrollQueue } from "@/utils/scrollQueue";
 import { buildVerseSnippet, decidePendingJump, type Bookmark } from "@/utils/bookmarks";
 import type { Block, BookContent } from "@/types/bible";
@@ -37,16 +38,18 @@ function getChapterScrollY(chapterNumber: string): number {
 }
 
 /**
- * Queues a smooth scroll to a chapter. Coalesced with any other pending
- * chapter jump so rapid-fire navigation ends up as one glide to the final
- * target instead of a stack of interrupted animations.
+ * Queues a scroll to a chapter. Coalesced with any other pending chapter jump
+ * so rapid-fire navigation ends up as one glide to the final target instead
+ * of a stack of interrupted animations.
  * @param chapterNumber - Chapter key (e.g. "3") whose element to scroll to.
+ * @param options.instant - Skip the glide and snap straight there.
  * @returns void
  */
-function smoothScrollToChapter(chapterNumber: string) {
+function smoothScrollToChapter(chapterNumber: string, options: { instant?: boolean } = {}) {
   scrollQueue.enqueueAbsolute(() => getChapterScrollY(chapterNumber), {
     coalesceKey: "chapter-jump",
     suppressTracking: true,
+    instant: options.instant,
   });
 }
 
@@ -466,14 +469,15 @@ export default function Home() {
   }, [settings.bookmarks, settings.currentBook]);
 
   /**
-   * Queues a smooth scroll that centers a verse ~1/3 down the viewport. The
-   * target is measured lazily when the task runs; returns null (queue skips,
-   * no crash) if the verse element is absent (e.g. a stale bookmark).
+   * Queues a scroll that centers a verse ~1/3 down the viewport. The target
+   * is measured lazily when the task runs; returns null (queue skips, no
+   * crash) if the verse element is absent (e.g. a stale bookmark).
    * @param chapter - Chapter number of the verse to center.
    * @param verse - Verse number key to center.
+   * @param options.instant - Skip the glide and snap straight there.
    * @returns void
    */
-  const scrollVerseIntoCenter = useCallback((chapter: number, verse: string) => {
+  const scrollVerseIntoCenter = useCallback((chapter: number, verse: string, options: { instant?: boolean } = {}) => {
     scrollQueue.enqueueAbsolute(
       () => {
         const verseElement = contentRef.current?.querySelector(
@@ -485,7 +489,7 @@ export default function Home() {
         const rect = verseElement.getBoundingClientRect();
         return window.scrollY + rect.top - window.innerHeight * 0.3;
       },
-      { coalesceKey: "jump-verse", suppressTracking: true }
+      { coalesceKey: "jump-verse", suppressTracking: true, instant: options.instant }
     );
   }, []);
 
@@ -879,38 +883,77 @@ export default function Home() {
     }
   };
 
-  // Calculate autocomplete suggestion for book search
+  // Calculate autocomplete suggestion for book search. Suppressed once the
+  // input has moved past the book name into a chapter/verse suffix - Tab would
+  // otherwise clobber that suffix by replacing the whole buffer with just the
+  // matched book name.
   const bookAutocomplete = useMemo(() => {
-    if (activeMode !== "goto-book" || !inputBuffer.trim()) {
+    if (activeMode !== "goto-book" || !inputBuffer.trim() || hasChapterSuffix(inputBuffer)) {
       return null;
     }
     return findBestMatch(inputBuffer, books as string[]);
   }, [activeMode, inputBuffer]);
 
-  // Handle "Go to Book" command
+  /**
+   * Handles the "Go to Book" command (`b`). Accepts "Book", "Book Chapter", or
+   * "Book Chapter:Verse" (fuzzy-matched book name). Same-book targets navigate
+   * immediately against the already-loaded content; cross-book targets always
+   * stash a pendingJumpRef the content-load effect completes once the new
+   * book's content arrives - the same mechanism cross-book bookmark jumps
+   * use, so an out-of-range verse degrades gracefully exactly like a stale
+   * bookmark does. Jumps straight there with no scroll animation.
+   * @returns void
+   */
   const handleGoToBook = () => {
     const input = inputBuffer.trim();
-    
+
     if (!input) {
       cancelCommand();
       return;
     }
 
-    // Find the best matching book
-    const matchedBook = findBestMatch(input, books as string[]);
-    
-    if (matchedBook) {
-      // Navigate to the book
-      setSetting("currentBook", matchedBook);
-      setSetting("currentChapter", 1);
-      // Scroll to top
-      scrollQueue.enqueueAbsolute(() => 0, { coalesceKey: "chapter-jump", suppressTracking: true });
-      // Close modal and clear input
+    const target = parseBookNavigationInput(input, books as string[]);
+
+    if (!target) {
       cancelCommand();
-    } else {
-      // No match found - just close modal
-      cancelCommand();
+      return;
     }
+
+    if (target.book === settings.currentBook) {
+      const chapterKey = target.chapter.toString();
+      if (content[chapterKey]) {
+        setSetting("currentChapter", target.chapter);
+        if (target.verse) {
+          setHighlightedVerse({ chapter: target.chapter, verse: target.verse });
+          scrollVerseIntoCenter(target.chapter, target.verse, { instant: true });
+        } else {
+          smoothScrollToChapter(chapterKey, { instant: true });
+          // Mirror handleGoToNextChapter/PreviousChapter: a chapter jump with
+          // no explicit verse still moves the j/k cursor to the new chapter's
+          // first verse, so it doesn't stay stranded on the old chapter.
+          const firstVerse = firstVerseNumber(content[chapterKey]);
+          if (firstVerse) {
+            setHighlightedVerse({ chapter: target.chapter, verse: firstVerse });
+          }
+        }
+      }
+      cancelCommand();
+      return;
+    }
+
+    pendingJumpRef.current = {
+      book: target.book,
+      chapter: target.chapter,
+      verse: target.verse,
+      instant: true,
+    };
+    setSetting("currentBook", target.book);
+    setSetting("currentChapter", target.chapter);
+    // Scroll to top immediately so the old book's content doesn't sit at a
+    // stale scroll position while the new book fetches; the pending-jump
+    // effect takes over once content for the new book has loaded.
+    scrollQueue.enqueueAbsolute(() => 0, { coalesceKey: "chapter-jump", suppressTracking: true, instant: true });
+    cancelCommand();
   };
 
   // Handle Tab key for autocomplete
@@ -933,8 +976,11 @@ export default function Home() {
     if (!bookChanged) {
       return;
     }
-    // A cross-book bookmark jump owns the highlight; don't reset it to verse 1
-    // (the content-keyed jump effect below will set the bookmarked verse).
+    // A cross-book bookmark/go-to-book jump owns the highlight; don't reset it
+    // to verse 1 (the content-keyed jump effect below will set the target
+    // verse). Every cross-book navigation path stashes a pendingJumpRef, so
+    // this branch is only reachable if some future caller changes the book
+    // directly without going through that mechanism.
     if (pendingJumpRef.current) {
       return;
     }
@@ -977,17 +1023,30 @@ export default function Home() {
       case "drop-stale":
         pendingJumpRef.current = null; // target chapter absent -> drop, no crash
         return;
-      case "complete":
+      case "complete": {
         // Suppress the initial-chapter-scroll effect for this commit: the fetch
         // `.then` reset the flag to false, but this jump owns the scroll and
-        // targets a verse, not the chapter top. Setting it true here (this
-        // effect runs before the initial-scroll effect, defined later) stops
-        // that effect from enqueuing a competing chapter-top scroll.
+        // targets a verse (or chapter), not necessarily the chapter top.
+        // Setting it true here (this effect runs before the initial-scroll
+        // effect, defined later) stops that effect from enqueuing a
+        // competing chapter-top scroll.
         hasScrolledToInitialChapter.current = true;
-        setHighlightedVerse({ chapter: decision.chapter, verse: decision.verse });
-        scrollVerseIntoCenter(decision.chapter, decision.verse);
+        if (decision.verse) {
+          setHighlightedVerse({ chapter: decision.chapter, verse: decision.verse });
+          scrollVerseIntoCenter(decision.chapter, decision.verse, { instant: decision.instant });
+        } else {
+          // Chapter-only jump (e.g. "Geneza 3" cross-book): no target verse
+          // was known, so scroll to the chapter and highlight its first verse.
+          const chapterKey = String(decision.chapter);
+          smoothScrollToChapter(chapterKey, { instant: decision.instant });
+          const firstVerse = firstVerseNumber(content[chapterKey]);
+          if (firstVerse) {
+            setHighlightedVerse({ chapter: decision.chapter, verse: firstVerse });
+          }
+        }
         pendingJumpRef.current = null;
         return;
+      }
     }
   }, [content, scrollVerseIntoCenter]);
 

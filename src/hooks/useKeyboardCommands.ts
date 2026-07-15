@@ -156,5 +156,6 @@ export function useKeyboardCommands(): KeyboardCommandsAPI {
     registerCommand,
     cancelCommand,
     setInputBuffer,
+    setActiveMode,
   };
 }

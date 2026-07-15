@@ -2,7 +2,7 @@
  * Type definitions for the keyboard command system
  */
 
-export type CommandMode = null | "goto-chapter" | "goto-book" | "visibility" | "bookmarks" | "translation";
+export type CommandMode = null | "goto-chapter" | "goto-book" | "visibility" | "bookmarks" | "translation" | "notes" | "notes-browser";
 
 export type CommandType = "single" | "modal";
 
@@ -35,4 +35,6 @@ export interface KeyboardCommandsAPI {
   cancelCommand: () => void;
   /** Set the input buffer (for external updates) */
   setInputBuffer: (value: string) => void;
+  /** Set the active mode directly (for jump-then-reopen-a-different-modal flows) */
+  setActiveMode: (mode: CommandMode) => void;
 }

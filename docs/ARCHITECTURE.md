@@ -19,9 +19,10 @@ vim-style keyboard navigation. This document is the architecture-truth reference
 
 - **Single commands** execute immediately: `j`/`k` (verse), `u`/`d` (page),
   `n`/`N` (prev/next chapter), `gg`/`G` (first/last chapter; `gg` is a two-key
-  chord), `m` (toggle a bookmark on the highlighted verse).
+  chord), `m` (toggle a bookmark on the highlighted verse), `a` (open the
+  per-verse notes panel on the highlighted verse).
 - **Modal commands** open input modals: `c` (go-to-chapter), `b` (go-to-book),
-  `v` (visibility settings), `M` (bookmarks list).
+  `v` (visibility settings), `M` (bookmarks list), `A` (global notes browser).
 
 Commands are registered in `page.tsx` via `registerCommand()`.
 
@@ -33,6 +34,9 @@ Commands are registered in `page.tsx` via `registerCommand()`.
 - `VisibilityModal` — toggles display options (chapter numbers, verse numbers,
   verse highlighter).
 - `BookmarksModal` — lists, jumps to, and deletes verse bookmarks (opened with `M`).
+- `NotesPanel` — per-verse notes list/add/edit/delete (opened with `a`).
+- `NotesBrowserModal` — global notes browser across books, `f` toggles
+  current-book/all-books scope (opened with `A`).
 - `Toast` — transient, presentational hint message (e.g. the
   bookmark-requires-highlighter hint).
 - `SettingsContext` — global settings state with `localStorage` persistence,
@@ -56,6 +60,37 @@ Commands are registered in `page.tsx` via `registerCommand()`.
   the synchronously-flipped current-book setting, so a jump never completes
   against stale content and a superseded jump is abandoned rather than left to
   suppress later resets).
+
+## Verse notes
+
+- A verse gets a note with `a`, which **requires the verse highlighter to be
+  on** (same precondition as `m`) and opens a per-verse panel scoped to the
+  highlighted verse. Multiple notes per verse are supported, oldest-first.
+  `A` opens a global browser (one row per note, scoped to the current book by
+  default; `f` toggles to all books). Both panels use `x` with a two-press
+  arm/confirm for delete, unlike bookmarks' single-press delete.
+- **Persistence.** Unlike bookmarks (localStorage), notes live in Supabase.
+  `src/hooks/useNotes.ts` fetches the whole table once on mount and caches it
+  in memory; add/edit/delete apply optimistically (instant local update,
+  rollback + toast on failure). `src/lib/notesRepository.ts` wraps the
+  Supabase queries server-side; `src/app/api/notes(/[id])/route.ts` are thin
+  REST handlers over it.
+- **Server-only access.** The `notes` table has RLS enabled with zero
+  policies; only the `service_role` key (in `src/lib/supabase.ts`, read from
+  the server-only `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` env vars) can
+  read/write it. The client never talks to Supabase directly.
+- **Identity** is the `(book, chapter, verse)` tuple, same as bookmarks.
+  Pure, framework-free list logic lives in `src/utils/notes.ts`.
+- **Jump-then-reopen-a-different-modal.** Jumping to a note from the global
+  browser needs to switch straight from `"notes-browser"` mode to `"notes"`
+  mode, which the declarative `registerCommand({type: "modal"})` mechanism
+  can't do on its own — `useKeyboardCommands` exposes `setActiveMode` for
+  this. Because `NotesBrowserModal` calls its `onJump` and `onClose` props
+  synchronously back to back, and `onClose` (`cancelCommand`) sets
+  `activeMode` to `null` in the same React batch, `handleNoteJump`'s
+  `setActiveMode("notes")` call is deferred via `setTimeout(fn, 0)` so it
+  isn't clobbered — the same `setTimeout` defer pattern `TranslationModal`
+  already uses for its `onSelect` callback.
 
 ## Conventions
 

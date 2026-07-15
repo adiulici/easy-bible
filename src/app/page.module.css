@@ -69,6 +69,31 @@
   padding-left: 8px;
 }
 
+.hasNoteSpacing {
+  margin-left: 10px;
+}
+
+.noteIndicatorAnchor {
+  position: relative;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  vertical-align: middle;
+}
+
+.noteIndicator {
+  --notes-accent: #3a6ea5;
+
+  position: absolute;
+  top: 0;
+  left: -10px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: var(--notes-accent);
+  transform: translate(0, -50%);
+}
+
 /* Prose paragraphs inherit the global <p> reading style (Domine, indented,
    airy line-height); this class is a hook for future overrides. */
 .paragraph {

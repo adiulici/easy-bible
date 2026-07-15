@@ -8,6 +8,11 @@ import BookmarksModal from "@/components/BookmarksModal";
 import TranslationModal from "@/components/TranslationModal";
 import Toast from "@/components/Toast";
 import StickyHeader from "@/components/StickyHeader";
+import NotesPanel from "@/components/NotesPanel";
+import NotesBrowserModal from "@/components/NotesBrowserModal";
+import { useNotes } from "@/hooks/useNotes";
+import { notesForVerse } from "@/utils/notes";
+import type { Note } from "@/types/notes";
 import { useSettings } from "@/context/SettingsContext";
 import books from "@/data/books.json";
 import { findBestMatch } from "@/utils/fuzzySearch";
@@ -119,6 +124,7 @@ type ChapterRenderProps = {
   highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
   bookmarkedVerseKeys: Set<string>;
+  notesVerseKeys: Set<string>;
   onVerseClick: (chapter: number, verse: string) => void;
 };
 
@@ -138,6 +144,7 @@ function Chapter({
   highlightedVerse,
   showVerseHighlighter,
   bookmarkedVerseKeys,
+  notesVerseKeys,
   onVerseClick,
 }: ChapterRenderProps) {
   // Tracks verse numbers already rendered in this chapter so the verse number
@@ -159,23 +166,40 @@ function Chapter({
   };
 
   /**
-   * Renders a single verse-bearing span (used by both prose and poetry).
+   * Renders a single verse-bearing span (used by both prose and poetry). A
+   * verse can span multiple spans (wrapped poetry lines, or a paragraph verse
+   * split across dialogue-formatted lines in the source data), so the note
+   * indicator - like the verse number - is gated to the verse's first
+   * occurrence: otherwise it would render once per span instead of once per
+   * verse. It's rendered inside a zero-sized anchor span (not `position:
+   * relative` on the verse span itself, which wraps across multiple lines for
+   * longer verses - browsers anchor an absolutely-positioned child to an
+   * inconsistent line fragment in that case) and positioned absolutely within
+   * it, so adding or removing a note never changes the paragraph's line
+   * wrapping and always aligns to the verse's first line.
    * @param verseKey - Verse-number key (e.g. "3").
    * @param text - The verse (or line) text.
    * @param key - React key.
    * @returns The verse span element.
    */
   const renderVerse = (verseKey: string, text: string, key: string) => {
-    const showNumber = showVerseNumbers && isFirstOccurrence(verseKey);
+    const isFirst = isFirstOccurrence(verseKey);
+    const showNumber = showVerseNumbers && isFirst;
+    const hasNotes = isFirst && notesVerseKeys.has(`${chapterNumber}:${verseKey}`);
     return (
       <span
         key={key}
         data-chapter={chapterNumber}
         data-verse={verseKey}
-        className={verseClassName(verseKey)}
+        className={`${verseClassName(verseKey)} ${hasNotes ? styles.hasNoteSpacing : ""}`}
         onClick={() => onVerseClick(chapterNumber, verseKey)}
       >
         {showNumber && <sup className={styles.verseNumber}>{verseKey}</sup>}
+        {hasNotes && (
+          <span className={styles.noteIndicatorAnchor} aria-hidden="true">
+            <span className={styles.noteIndicator} />
+          </span>
+        )}
         {text}
       </span>
     );
@@ -246,6 +270,7 @@ function Book({
   highlightedVerse,
   showVerseHighlighter,
   bookmarkedVerseKeys,
+  notesVerseKeys,
   onVerseClick,
 }: {
   book: BookContent;
@@ -254,6 +279,7 @@ function Book({
   highlightedVerse: { chapter: number; verse: string } | null;
   showVerseHighlighter: boolean;
   bookmarkedVerseKeys: Set<string>;
+  notesVerseKeys: Set<string>;
   onVerseClick: (chapter: number, verse: string) => void;
 }) {
   return (
@@ -272,6 +298,7 @@ function Book({
               highlightedVerse={highlightedVerse}
               showVerseHighlighter={showVerseHighlighter}
               bookmarkedVerseKeys={bookmarkedVerseKeys}
+              notesVerseKeys={notesVerseKeys}
               onVerseClick={onVerseClick}
             />
           </div>
@@ -295,7 +322,7 @@ export default function Home() {
 
   // Pending cross-book bookmark jump, consumed by a content-keyed effect once
   // the target book's content has loaded. See the jump effect below.
-  const pendingJumpRef = useRef<{ book: string; chapter: number; verse: string } | null>(null);
+  const pendingJumpRef = useRef<{ book: string; chapter: number; verse?: string; instant?: boolean } | null>(null);
 
   // Which book `content` currently holds. `content` itself carries no book
   // identity, and `settings.currentBook` flips synchronously (ahead of the
@@ -312,7 +339,7 @@ export default function Home() {
   const navigationThrottleMs = 50; // Minimum ms between navigation actions
 
   // Keyboard commands hook
-  const { activeMode, inputBuffer, registerCommand, cancelCommand, setInputBuffer } = useKeyboardCommands();
+  const { activeMode, inputBuffer, registerCommand, cancelCommand, setInputBuffer, setActiveMode } = useKeyboardCommands();
 
   // Build a flat list of all verses for navigation (one entry per distinct
   // verse, in reading order across the block structure).
@@ -458,6 +485,26 @@ export default function Home() {
     };
   }, []);
 
+  const { notes, addNote, editNote, deleteNote } = useNotes(showToast);
+
+  // Note preselected when opening the per-verse panel via a global-browser jump;
+  // null selects the first row (the plain `a` open path).
+  const [notesPanelFocusNoteId, setNotesPanelFocusNoteId] = useState<number | null>(null);
+
+  // Notes for the currently highlighted verse, oldest-first (the API already
+  // orders by created_at ascending, and optimistic adds append to the end).
+  const highlightedVerseNotes = useMemo(() => {
+    if (!highlightedVerse) return [];
+    return notesForVerse(notes, settings.currentBook, highlightedVerse.chapter, highlightedVerse.verse);
+  }, [notes, settings.currentBook, highlightedVerse]);
+
+  // Keys ("chapter:verse") of notes in the current book, for the in-text marker.
+  const notesVerseKeys = useMemo(() => {
+    return new Set(
+      notes.filter((n) => n.book === settings.currentBook).map((n) => `${n.chapter}:${n.verse}`)
+    );
+  }, [notes, settings.currentBook]);
+
   // Keys ("chapter:verse") of bookmarks in the current book, for the in-text
   // marker. O(1) membership test per rendered verse.
   const bookmarkedVerseKeys = useMemo(() => {
@@ -517,6 +564,39 @@ export default function Home() {
     setSetting("currentChapter", bookmark.chapter);
   }, [settings.currentBook, setSetting, scrollVerseIntoCenter]);
 
+  /**
+   * Navigates to a note's verse (mirrors handleBookmarkJump's same-book/
+   * cross-book split) and opens the per-verse panel with that note preselected.
+   * The panel doesn't depend on `content`, so it opens immediately in both
+   * cases; only the scroll/highlight for a cross-book jump waits on the
+   * existing pendingJumpRef/content-load effect.
+   * @param note - The note to jump to.
+   * @returns void
+   */
+  const handleNoteJump = useCallback((note: Note) => {
+    if (note.book === settings.currentBook) {
+      setSetting("currentChapter", note.chapter);
+      setHighlightedVerse({ chapter: note.chapter, verse: note.verse });
+      scrollVerseIntoCenter(note.chapter, note.verse);
+    } else {
+      pendingJumpRef.current = {
+        book: note.book,
+        chapter: note.chapter,
+        verse: note.verse,
+      };
+      setSetting("currentBook", note.book);
+      setSetting("currentChapter", note.chapter);
+    }
+    // Deferred: NotesBrowserModal calls onJump then onClose synchronously in
+    // the same handler, and onClose (cancelCommand) sets activeMode to null in
+    // the same React batch - without deferring, that would immediately clobber
+    // the setActiveMode("notes") below. Mirrors TranslationModal's onSelect defer.
+    setTimeout(() => {
+      setNotesPanelFocusNoteId(note.id);
+      setActiveMode("notes");
+    }, 0);
+  }, [settings.currentBook, setSetting, scrollVerseIntoCenter, setActiveMode]);
+
   // The `m` handler needs several volatile values (highlighted verse, loaded
   // content, highlighter flag, current book, active mode) but must keep a STABLE
   // identity - otherwise the command-registration effect below re-runs on every
@@ -567,6 +647,37 @@ export default function Home() {
       createdAt: Date.now(),
     });
   }, [toggleBookmark, showToast]);
+
+  // Same stable-identity-via-ref trick as toggleBookmarkInputsRef above.
+  const openNotesPanelInputsRef = useRef({
+    activeMode,
+    highlightedVerse,
+    showVerseHighlighter: settings.showVerseHighlighter,
+  });
+  openNotesPanelInputsRef.current = {
+    activeMode,
+    highlightedVerse,
+    showVerseHighlighter: settings.showVerseHighlighter,
+  };
+
+  /**
+   * Opens the per-verse notes panel on the currently highlighted verse (the `a`
+   * command). Requires the highlighter to be on and a verse selected, same
+   * precondition as `m`; otherwise shows a hint toast and is a no-op.
+   * @returns void
+   */
+  const handleOpenNotesPanel = useCallback(() => {
+    const { activeMode, highlightedVerse, showVerseHighlighter } = openNotesPanelInputsRef.current;
+    if (activeMode !== null) {
+      return;
+    }
+    if (!showVerseHighlighter || !highlightedVerse) {
+      showToast("Turn on the verse highlighter to add a note");
+      return;
+    }
+    setNotesPanelFocusNoteId(null);
+    setActiveMode("notes");
+  }, [showToast, setActiveMode]);
 
   // Handle chapter navigation
   const handleGoToNextChapter = useCallback(() => {
@@ -840,7 +951,17 @@ export default function Home() {
       type: "modal",
       mode: "translation",
     });
-  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth, handleToggleBookmark]);
+    registerCommand({
+      key: "a",
+      type: "single",
+      handler: handleOpenNotesPanel,
+    });
+    registerCommand({
+      key: "A",
+      type: "modal",
+      mode: "notes-browser",
+    });
+  }, [registerCommand, handleMoveHighlighterDown, handleMoveHighlighterUp, handlePageUp, handlePageDown, handleGoToTop, handleGoToBottom, handleGoToNextChapter, handleGoToPreviousChapter, handleDecreaseWidth, handleIncreaseWidth, handleToggleBookmark, handleOpenNotesPanel]);
 
   // Handle visibility modal open/close based on activeMode
   useEffect(() => {
@@ -1236,6 +1357,7 @@ export default function Home() {
             highlightedVerse={highlightedVerse}
             showVerseHighlighter={settings.showVerseHighlighter}
             bookmarkedVerseKeys={bookmarkedVerseKeys}
+            notesVerseKeys={notesVerseKeys}
             onVerseClick={handleVerseClick}
           />
         </div>
@@ -1279,6 +1401,27 @@ export default function Home() {
         isOpen={activeMode === "translation"}
         current={settings.currentTranslation}
         onSelect={(t) => setSetting("currentTranslation", t)}
+        onClose={cancelCommand}
+      />
+      <NotesPanel
+        isOpen={activeMode === "notes"}
+        notes={highlightedVerseNotes}
+        focusNoteId={notesPanelFocusNoteId}
+        onAdd={(body) => {
+          if (highlightedVerse) {
+            addNote(settings.currentBook, highlightedVerse.chapter, highlightedVerse.verse, body);
+          }
+        }}
+        onEdit={editNote}
+        onDelete={deleteNote}
+        onClose={cancelCommand}
+      />
+      <NotesBrowserModal
+        isOpen={activeMode === "notes-browser"}
+        notes={notes}
+        currentBook={settings.currentBook}
+        onJump={handleNoteJump}
+        onDelete={(note) => deleteNote(note.id)}
         onClose={cancelCommand}
       />
       <Toast message={toast} />

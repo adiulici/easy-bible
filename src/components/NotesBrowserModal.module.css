@@ -1,0 +1,137 @@
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-color: transparent;
+  z-index: 1000;
+}
+
+.modal {
+  --note-modal-bg: rgba(255, 255, 255, 0.95);
+  --note-modal-fg: #333;
+  --note-modal-shadow: rgba(0, 0, 0, 0.1);
+  --note-selected-bg: rgba(0, 0, 0, 0.06);
+  --note-snippet-fg: #595959;
+  --note-focus-ring: #333;
+  --note-delete-fg: #666666;
+  --note-delete-armed-fg: #b3261e;
+
+  background: var(--note-modal-bg);
+  padding: 1.5rem 2rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 20px var(--note-modal-shadow);
+  min-width: 400px;
+  max-width: 600px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin-bottom: 45px;
+  font-family: "Domine", serif;
+  color: var(--note-modal-fg);
+}
+
+.header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--note-snippet-fg);
+  margin-bottom: 0.25rem;
+}
+
+.scopeHint {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--note-snippet-fg);
+  opacity: 0.7;
+  margin-bottom: 0.75rem;
+}
+
+.empty {
+  font-size: 1.2rem;
+  color: var(--note-modal-fg);
+  text-align: center;
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5rem;
+  border-radius: 4px;
+}
+
+.row.selected {
+  background-color: var(--note-selected-bg);
+}
+
+.rowBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-family: inherit;
+  color: inherit;
+}
+
+.rowBody:focus-visible,
+.delete:focus-visible {
+  outline: 2px solid var(--note-focus-ring);
+  outline-offset: -2px;
+}
+
+.reference {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.snippet {
+  font-size: 0.95rem;
+  color: var(--note-snippet-fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--note-delete-fg);
+  font-size: 1.4rem;
+  line-height: 1;
+  padding: 0 0.75rem;
+  border-radius: 4px;
+}
+
+.delete:hover {
+  color: var(--note-modal-fg);
+}
+
+.deleteArmed {
+  color: var(--note-delete-armed-fg);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
